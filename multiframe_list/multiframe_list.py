@@ -1,6 +1,8 @@
-"""A module that brings the MultiframeList class with it.
+"""
+A module that brings the MultiframeList class with it.
 Its purpose is to display items and their properties over
-several colums and easily format, sort and manage them as part of a UI."""
+several colums and easily format, sort and manage them as part of a UI.
+"""
 
 import tkinter as tk
 import tkinter.ttk as ttk
