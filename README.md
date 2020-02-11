@@ -5,7 +5,7 @@ It is a tkinter widget that can be used to display data split up over multiple c
 ## Installation
 Get it by running `pip install multiframe_list`
 
-Example script:
+## Example script:
 
 ```python
 import tkinter as tk
