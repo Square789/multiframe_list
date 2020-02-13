@@ -6,7 +6,7 @@ To run in, call run_demo().
 from random import randint, sample
 import tkinter as tk
 
-from multiframe_list.multiframe_list import MultiframeList
+from multiframe_list.multiframe_list import MultiframeList, END
 
 def adddata(mfl):
 	mfl.insertrow({col_id: randint(0, 100)
@@ -21,7 +21,7 @@ def add1col(mfl):
 		mfl.removecolumn("newcol")
 	else:
 		mfl.addcolumns({"col_id": "newcol", "name": "added @ runtime; wide.",
-		"w_width": 35, "minsize": 30, "weight": 3})
+			"w_width": 35, "minsize": 30, "weight": 3})
 		mfl.assigncolumn("newcol", 6)
 
 def getcurrrow(mfl, end = None):
@@ -95,8 +95,8 @@ def run_demo():
 		{"name": "Pricecol", "sort": True, "col_id": "sickocol"},
 		{"name": "-100", "col_id": "sub_col", "formatter": lambda n: n-100},
 		{"name": "Wide col", "w_width": 30},
-		{"name": "unconf name", "col_id": "cnfcl"}),
-	listboxstyle = {"background": "#4E4E4E", "foreground": "#EEEEEE"})
+		{"name": "unconf name", "col_id": "cnfcl"},
+	))
 	mfl.configcolumn("sickocol", formatter = priceconv)
 	mfl.configcolumn("sorter", sort = True)
 	mfl.configcolumn("cnfcl", name = "Configured Name", sort = True,
@@ -109,7 +109,7 @@ def run_demo():
 		{"text": "+row","command": lambda: adddata(mfl)},
 		{"text": "-row", "command": lambda: remrow(mfl)},
 		{"text": "---", "command": mfl.clear},
-		{"text": "+frame", "fg":"#AA0000", "command":
+		{"text": "+frame", "fg": "#AA0000", "command":
 			lambda: mfl.addframes(1)},
 		{"text": "-frame", "command": lambda: remframe(mfl)},
 		{"text": "getcolumns", "command": lambda: print(mfl.getcolumns())},
@@ -120,7 +120,11 @@ def run_demo():
 		{"text": "getlength", "command": lambda: print(mfl.getlen())},
 		{"text": "addcolumn", "command": lambda: add1col(mfl)},
 		{"text": "swp01", "command": lambda: swap01(mfl)},
-		{"text": "swprnd", "command": lambda: swaprand(mfl)}
+		{"text": "swprnd", "command": lambda: swaprand(mfl)},
+		{"text": "bgstyle", "command": lambda: \
+			root.tk.eval("ttk::style configure . -background #{0}{0}{0}".format(
+				hex(randint(0, 255))[2:]
+			))}
 	)
 
 	for b_args in btns:

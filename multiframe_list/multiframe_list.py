@@ -9,7 +9,7 @@ import tkinter.ttk as ttk
 from operator import itemgetter
 from math import floor
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "Square789"
 
 BLANK = ""
@@ -18,7 +18,6 @@ _DEF_LISTBOX_WIDTH = 20
 
 _DEF_OPT = {
 	"inicolumns": [],
-	"listboxstyle": {},
 	"rightclickbtn": "3",
 }
 
@@ -48,7 +47,7 @@ class Column():
 	its data in there.
 	##################################################################
 	!!! Columns should not be instantiated or controlled directly, !!!
-	!!! only through methods of a MultiframeList.				  !!!
+	!!! only through methods of a MultiframeList.				   !!!
 	##################################################################
 	Required args:
 
@@ -147,11 +146,6 @@ class Column():
 			if callargs:
 				self.mfl.framecontainer.grid_columnconfigure(self.assignedframe,
 					**callargs)
-			# width = self.cnf["minsize"]
-			#for widg in self.mfl.frames[self.assignedframe]:
-			#	widg.config(width = width)
-			# expand_opt = 1 if width is None else 0
-			# self.mfl.frames[self.assignedframe][0].pack(expand = expand_opt)
 
 	def __cnf_name(self):
 		if self.assignedframe is not None:
@@ -191,7 +185,7 @@ class Column():
 
 	def data_insert(self, elem, index=None):
 		"""
-        Inserts elem to self.data at index and refreshes interface, if
+		Inserts elem to self.data at index and refreshes interface, if
 		assigned a frame. If index is not specified, elem will be appended
 		instead.
 		"""
@@ -209,7 +203,7 @@ class Column():
 
 	def data_pop(self, index):
 		"""
-        Pops the element at index, refreshes interface if assigned a
+		Pops the element at index, refreshes interface if assigned a
 		frame.
 		"""
 		self.data.pop(index)
@@ -218,7 +212,7 @@ class Column():
 
 	def data_set(self, newdata):
 		"""
-        Sets the column's data to the list specified, refreshes interface
+		Sets the column's data to the list specified, refreshes interface
 		if assigned a frame.
 		"""
 		if not isinstance(newdata, list):
@@ -230,7 +224,7 @@ class Column():
 
 	def format(self, exclusively = None):
 		"""
-        If interface frame is specified, runs all data through
+		If interface frame is specified, runs all data through
 		self.cnf["formatter"] and displays result.
 		If exclusively is set (as an iterable),
 		only specified indices will be formatted.
@@ -248,7 +242,7 @@ class Column():
 
 	def setdisplay(self, wanted_frame):
 		"""
-        Sets the display frame of the column to wanted_frame. To unregister,
+		Sets the display frame of the column to wanted_frame. To unregister,
 		set it no None."""
 		self.assignedframe = wanted_frame
 		if self.assignedframe is not None:
@@ -326,6 +320,9 @@ class MultiframeList(ttk.Frame):
 		self.bind("<Up>", lambda _: self.__setindex_arr(-1))
 		self.bind("<KeyPress-App>", self.__callback_menu_button)
 
+		self.ttkhookstyle = ttk.Style()
+		self.bind("<<ThemeChanged>>", self.__themeupdate)
+
 		self.curcellx = None
 		self.curcelly = None
 		self.coordx = None
@@ -361,10 +358,6 @@ class MultiframeList(ttk.Frame):
 			self.columns.append(Column(self, **colopt))
 			self.columns[-1].setdisplay(index)
 
-		self.ttkhookstyle = ttk.Style()
-		self.bind("<<ThemeChanged>>", self.__themeupdate)
-		self.__themeupdate(None)
-
 		self.scrollbar.pack(fill = tk.Y, expand = 0, side = tk.RIGHT)
 		self.framecontainer.pack(expand = 1, fill = tk.BOTH, side = tk.RIGHT)
 
@@ -372,7 +365,7 @@ class MultiframeList(ttk.Frame):
 
 	def addcolumns(self, *coldicts):
 		"""
-        Takes any amount of dicts, then adds columns where the column
+		Takes any amount of dicts, then adds columns where the column
 		constructor receives the dicts as kwargs. See the
 		multiframe_list.Column class for a list of acceptable kwargs.
 		"""
@@ -381,7 +374,7 @@ class MultiframeList(ttk.Frame):
 
 	def addframes(self, amount):
 		"""
-        Adds amount of frames, display slots in a way, fills their listboxes
+		Adds amount of frames, display slots in a way, fills their listboxes
 		up with empty strings and immediatedly displays them.
 		"""
 		startindex = len(self.frames)
@@ -389,8 +382,7 @@ class MultiframeList(ttk.Frame):
 			self.frames.append([])
 			curindex = startindex + i
 			rcb = self.options["rightclickbtn"]
-			self.frames[curindex].append(ttk.Frame(self.framecontainer))#, width = 0))
-
+			self.frames[curindex].append(ttk.Frame(self.framecontainer))
 			self.frames[curindex][0].grid_rowconfigure(1, weight = 1)
 			self.frames[curindex][0].grid_columnconfigure(0, weight = 1)
 
@@ -457,16 +449,18 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 			self.frames[curindex][1].config(yscrollcommand = self.__scrollalllistbox)
 			self.frames[curindex][1].insert(tk.END, *(BLANK for _ in range(self.length)))
+			self.frames[curindex][1].configure(
+				self._get_listbox_conf(self.frames[curindex][1]))
 
-			self.frames[curindex][3].grid(row = 0, column = 1, sticky = "news")		#grid sort_indicator
-			self.frames[curindex][2].grid(row = 0, column = 0, sticky = "news")		#grid label
-			self.frames[curindex][1].grid(row = 1, column = 0, sticky = "news",		#grid listbox
+			self.frames[curindex][3].grid(row = 0, column = 1, sticky = "news") #grid sort_indicator
+			self.frames[curindex][2].grid(row = 0, column = 0, sticky = "news") #grid label
+			self.frames[curindex][1].grid(row = 1, column = 0, sticky = "news", #grid listbox
 				columnspan = 2)
-			self.frames[curindex][0].grid(row = 0, column = curindex, sticky = "news")	#grid frame
+			self.frames[curindex][0].grid(row = 0, column = curindex, sticky = "news") #grid frame
 
 	def assigncolumn(self, col_id, req_frame):
 		"""
-        Sets display of a column given by its column id to req_frame.
+		Sets display of a column given by its column id to req_frame.
 		The same frame may not be occupied by multiple columns and must
 		exist. Set req_frame to None to hide the column.
 		"""
@@ -504,22 +498,22 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 	def configcolumn(self, col_id, **cnf):
 		"""
-        Update the configuration of the column referenced by col_id
+		Update the configuration of the column referenced by col_id
 		with the values specified in cnf as kwargs.
-        """
+		"""
 		col = self._get_col_by_id(col_id)
 		col.config(**cnf)
 
 	def format(self, targetcols = None, indices = None):
 		"""
-        Format the entire list based on the formatter functions in columns.
+		Format the entire list based on the formatter functions in columns.
 		Optionally, a list of columns to be formatted can be supplied by their
 		id, which will leave all non-mentioned columns alone.
 		Also, if index is specified, only the indices included in that list
 		will be formatted.
 
 		! Call this after all input has been performed !
-        """
+		"""
 		if indices is not None:
 			for i in indices:
 				tmp = self.length - 1
@@ -535,14 +529,14 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 	def getcolumns(self):
 		"""
-        Returns a dict where key is a column id and value is the column's
+		Returns a dict where key is a column id and value is the column's
 		current display slot (frame). Value is None if the column is hidden.
 		"""
 		return {c.col_id: c.assignedframe for c in self.columns}
 
 	def getselectedcell(self):
 		"""
-        Returns the coordinates of the currently selected cell as a tuple
+		Returns the coordinates of the currently selected cell as a tuple
 		of length 2; (0, 0) starting in the top left corner;
 		The two values may also be None.
 		"""
@@ -550,19 +544,19 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 	def getlastclick(self):
 		"""
-        Returns the absolute screen coordinates the last user interaction
+		Returns the absolute screen coordinates the last user interaction
 		was made at as a tuple. May consist of int or None.
 		This method can be used to get coordinates to open a popup window at.
 		"""
 		return (self.coordx, self.coordy)
 
 	def getlen(self):
-		"""Returns length of the multiframe-list."""
+		"""Returns length of the MultiframeList."""
 		return self.length
 
 	def removecolumn(self, col_id):
 		"""
-        Deletes the column addressed by col_id, safely unregistering all
+		Deletes the column addressed by col_id, safely unregistering all
 		related elements.
 		"""
 		col = self._get_col_by_id(col_id)
@@ -575,11 +569,11 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 	def removeframes(self, amount):
 		"""
-        Safely remove the specified amount of frames from the
+		Safely remove the specified amount of frames from the
 		MultiframeList, unregistering all related elements.
 		"""
 		to_purge = range(len(self.frames) - 1,
-            len(self.frames) - amount - 1, -1)
+			len(self.frames) - amount - 1, -1)
 		for col in self.columns:
 			if col.assignedframe in to_purge:
 				col.setdisplay(None)
@@ -611,7 +605,7 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 	def insertrow(self, data, insindex = None):
 		"""
-        Data should be supplied in the shape of a dict where a key is a
+		Data should be supplied in the shape of a dict where a key is a
 		column's id and the corresponding value is the element that should
 		be appended to the column.
 		If insindex is not specified, data will be appended, else inserted
@@ -627,7 +621,7 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 	def setdata(self, data, reset_sortstate = True):
 		"""
-        Data has to be supplied as a dict where:
+		Data has to be supplied as a dict where:
 		key is a column id and value is a list of values the column targeted by
 		key should be set to. If the lists are of differing lengths, an
 		exception will be raised.
@@ -654,7 +648,7 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 	def setcolumn(self, col_to_mod, data):
 		"""
-        Sets column specified by col_to_mod to data.
+		Sets column specified by col_to_mod to data.
 		Raises an exception if length differs from the rest of the
 		columns.
 		"""
@@ -677,7 +671,7 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 	def getrows(self, start, end = None):
 		"""
-        If end is omitted, only the row indexed at start will be included.
+		If end is omitted, only the row indexed at start will be included.
 		If end is set to END, all data from start to the end of the
 		MultiframeListbox will be returned.
 		If start is set to ALL, all data that is present in the
@@ -689,7 +683,7 @@ if {{"x11" eq [tk windowingsystem]}} {{
 			The integer for a column gives the index of all sub-lists in the
 			first returned list that make up the data of a column, in order.
 
-        For example, if the return values were:
+		For example, if the return values were:
 		[["egg", "2", ""], ["foo", "3", "Comment"], ["bar", "0", ""]] and
 		{"name_col":0, "comment_col":2, "rating_col":1}, the data of the
 		column "name_col" would be ["egg", "foo", "bar"], "rating_col"
@@ -726,7 +720,7 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 	def sort(self, _evt, call_col):
 		"""
-        This function will sort the list, modifying all column's data.
+		This function will sort the list, modifying all column's data.
 		It is designed to only be called through labels, taking an event
 		placeholder as arg, followed by the calling column where id, sortstate
 		and - if needed - the fallback type are read from.
@@ -769,7 +763,7 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 	def _get_col_by_id(self, col_id):
 		"""
-        Returns the column specified by col_id, raises an exception if it
+		Returns the column specified by col_id, raises an exception if it
 		is not found.
 		"""
 		for col in self.columns:
@@ -777,8 +771,26 @@ if {{"x11" eq [tk windowingsystem]}} {{
 				return col
 		raise ValueError("No column with column id \"{}\".".format(col_id))
 
+	def _get_listbox_conf(self, listbox):
+		"""
+		Create a dict of style options based on the ttk Style settings
+		that listboxes can be directly configured with.
+
+		The listbox passed to the method will be queried for its config and
+		only configuration keys it returns present in the output dict.
+		"""
+		conf = self._DEFAULT_LISTBOX_CONFIG.copy()
+		for style in (".", "MultiframeList.Listbox"):
+			cur_style_cnf = self.ttkhookstyle.configure(style)
+			if cur_style_cnf is not None:
+				conf.update(cur_style_cnf)
+		ok_options = listbox.configure().keys()
+		conf = {k: v for k, v in conf.items() if k in ok_options}
+		return conf
+
 	def __getdisplayedcolumns(self):
-		"""Returns a list of references to the columns that are displaying
+		"""
+		Returns a list of references to the columns that are displaying
 		their data currently, sorted starting at 0.
 		"""
 		r = sorted([i for i in self.columns if i.assignedframe is not None],
@@ -786,7 +798,8 @@ if {{"x11" eq [tk windowingsystem]}} {{
 		return r
 
 	def __callback_menu_button(self, _):
-		"""User has pressed the menu button.
+		"""
+		User has pressed the menu button.
 		This generates a <<MultiframeRightclick>> event and modifies
 		self.coord[xy] to the currently selected index.
 		"""
@@ -819,7 +832,7 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 	def __relay_focus(self, *_):
 		"""
-        Called by frames when they are clicked so focus is given to the
+		Called by frames when they are clicked so focus is given to the
 		MultiframeList Frame itself.
 		"""
 		self.focus()
@@ -848,7 +861,7 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 	def __setindex_arr(self, direction):
 		"""
-        Executed when the MultiframeList receives <Up> and <Down> events,
+		Executed when the MultiframeList receives <Up> and <Down> events,
 		triggered by the user pressing the arrow keys.
 		"""
 		if self.curcelly == None:
@@ -866,11 +879,11 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 	def __lengthmod_callback(self):
 		"""
-        Called by some methods after the MultiframeList's length was
+		Called by some methods after the MultiframeList's length was
 		modified. This method updates frames without a column so the amount
 		of blank strings in them stays correct and modifies the current
 		selection index in case it is out of bounds.
-        """
+		"""
 		for fi in self.__getemptyframes():
 			curframelen = self.frames[fi][1].size()
 			if curframelen != self.length:
@@ -888,7 +901,7 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 	def __scrollallbar(self, a, b, c = None):
 		"""Bound to the scrollbar; Will scroll listboxes."""
-        #c only appears when holding mouse and scrolling on the scrollbar
+		#c only appears when holding mouse and scrolling on the scrollbar
 		if c:
 			for i in self.frames:
 				i[1].yview(a, b, c)
@@ -906,7 +919,7 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 	def __selectionmod_callback(self):
 		"""
-        Called after selection (self.curcell[x/y]) is modified.
+		Called after selection (self.curcell[x/y]) is modified.
 		Purely cosmetic effect, as actual selection access should only
 		occur via self.curcell()
 		"""
@@ -922,17 +935,11 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 	def __themeupdate(self, _):
 		"""
-        Called from event binding when the current theme changes.
+		Called from event binding when the current theme changes.
 		Changes Listbox look, as those are not available as ttk variants.
 		"""
-		conf = self._DEFAULT_LISTBOX_CONFIG.copy()
-		for style in (".", "MultiframeList.Listbox"):
-			cur_style_cnf = self.ttkhookstyle.configure(style)
-			if cur_style_cnf is not None:
-				conf.update(cur_style_cnf)
 		if self.frames:
-			ok_options = self.frames[0][1].configure().keys()
-			conf = {k: v for k, v in conf.items() if k in ok_options}
+			conf = self._get_listbox_conf(self.frames[0][1])
 		for i in self.frames:
 			lbwidg = i[1]
 			lbwidg.configure(**conf)
