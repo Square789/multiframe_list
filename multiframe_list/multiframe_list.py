@@ -7,19 +7,15 @@ several colums and easily format, sort and manage them as part of a UI.
 import tkinter as tk
 import tkinter.ttk as ttk
 from operator import itemgetter
-from math import floor
 
-__version__ = "1.1.0"
+__version__ = "2.0.0"
 __author__ = "Square789"
 
 BLANK = ""
 
 _DEF_LISTBOX_WIDTH = 20
 
-_DEF_OPT = {
-	"inicolumns": [],
-	"rightclickbtn": "3",
-}
+_DEF_RCBTN = "3"
 
 _DEF_COL_OPT = {
 	"name": "<NO_NAME>",
@@ -35,7 +31,6 @@ ALL = "all"
 END = "end"
 COLUMN = "column"
 ROW = "row"
-BORDERWIDTH = 2
 ENTRYHEIGHT = 16
 
 SORTSYM = ("\u25B2", "\u25BC", "\u25A0") #desc, asc, none
@@ -94,7 +89,8 @@ class Column():
 			"name": self.__cnf_name, "sort": self.__cnf_sort,
 			"minsize": self.__cnf_grid, "weight": self.__cnf_grid,
 			"formatter": self.__cnf_formatter, "w_width": self.__cnf_w_width,
-			"fallback_type": lambda: False, }
+			"fallback_type": lambda: False,
+		}
 
 		if col_id is None:
 			self.col_id = self.__generate_col_id()
@@ -103,7 +99,8 @@ class Column():
 				if col.col_id == col_id:
 					raise ValueError(
 						"Column id {} is already in use!".format(
-						col_id.__repr__()) )
+						col_id.__repr__())
+					)
 			self.col_id = col_id
 
 		self.data = [BLANK for _ in range(self.mfl.length)]
@@ -268,14 +265,13 @@ class MultiframeList(ttk.Frame):
 	Arguments:
 	master - parent object, should be tkinter root or a tkinter widget
 
-	keyword arguments:
 	inicolumns <List<Dict>>: The columns here will be created and displayed
 		upon instantiation.
 		The dicts supplied should take form of Column constructor kwargs. See
-		the multiframe_list.Column class for a list of acceptable kwargs.
+		the `multiframe_list.Column` class for a list of acceptable kwargs.
 
 	rightclickbtn <Str>: The button that will trigger the MultiframeRightclick
-		virtual event. It is 3 (standard) on windows, this may differ from
+		virtual event. It is "3" (standard) on Windows, this may differ from
 		platform to platform.
 
 	A terrible idea of a feature:
@@ -311,7 +307,7 @@ class MultiframeList(ttk.Frame):
 		"selectforeground": "#FFFFFF",
 	}
 
-	def __init__(self, master, **options):
+	def __init__(self, master, inicolumns = None, rightclickbtn = None):
 		super().__init__(master, takefocus = True)
 
 		self.master = master
@@ -335,28 +331,17 @@ class MultiframeList(ttk.Frame):
 
 		self.frames = [] # Each frame contains interface elements for display.
 		self.columns = [] # Columns will provide data storage capability as
-		#well as some metadata.
+		# well as some metadata.
 
 		self.length = 0
 
-		self.options = _DEF_OPT.copy()
-		self.options.update(options) #user-defined options here
-		opt_vals = self.options.values()
-		self.options = dict( zip(
-			self.options.keys(),
-			(map(
-				lambda a, b: list(a) if b else a,
-				opt_vals,
-				[isinstance(i, tuple) for i in opt_vals])
-			)))
-		del opt_vals
-		# Converts every tuple to a list, leaving anything that isn't a tuple untouched.
+		self.rightclickbtn = rightclickbtn if rightclickbtn is not None else _DEF_RCBTN
 
-		self.addframes(len(self.options["inicolumns"]))
-		for index, colopt in enumerate(self.options["inicolumns"]):
-			# colopt["iniframe"] = index
-			self.columns.append(Column(self, **colopt))
-			self.columns[-1].setdisplay(index)
+		if inicolumns is not None:
+			self.addframes(len(inicolumns))
+			for index, colopt in enumerate(inicolumns):
+				self.columns.append(Column(self, **colopt))
+				self.columns[-1].setdisplay(index)
 
 		self.scrollbar.pack(fill = tk.Y, expand = 0, side = tk.RIGHT)
 		self.framecontainer.pack(expand = 1, fill = tk.BOTH, side = tk.RIGHT)
@@ -381,7 +366,7 @@ class MultiframeList(ttk.Frame):
 		for i in range(amount):
 			self.frames.append([])
 			curindex = startindex + i
-			rcb = self.options["rightclickbtn"]
+			rcb = self.rightclickbtn
 			self.frames[curindex].append(ttk.Frame(self.framecontainer))
 			self.frames[curindex][0].grid_rowconfigure(1, weight = 1)
 			self.frames[curindex][0].grid_columnconfigure(0, weight = 1)
@@ -788,6 +773,25 @@ if {{"x11" eq [tk windowingsystem]}} {{
 		conf = {k: v for k, v in conf.items() if k in ok_options}
 		return conf
 
+	def _get_listbox_entry_height(self, lb):
+		"""
+		Returns the height of a listbox' entry by measuring its
+		font and border width parameters.
+		"""
+		fm = self.tk.call("font", "metrics", lb["font"]).split()
+		return int(fm[fm.index("-linespace") + 1]) + 1 + \
+			2 * int(lb["selectborderwidth"])
+
+	def _get_index_from_mouse_y(self, lb, y_pos):
+		"""
+		Calculates the index of a listbox from pixel y position
+		by measuring font height, y offset and border settings.
+		"""
+		offset = int(lb.yview()[0] * self.length)
+		borderwidth = int(lb["borderwidth"])
+		e_height = self._get_listbox_entry_height(lb)
+		return ((y_pos - borderwidth) // e_height) + offset
+
 	def __getdisplayedcolumns(self):
 		"""
 		Returns a list of references to the columns that are displaying
@@ -801,7 +805,7 @@ if {{"x11" eq [tk windowingsystem]}} {{
 		"""
 		User has pressed the menu button.
 		This generates a <<MultiframeRightclick>> event and modifies
-		self.coord[xy] to the currently selected index.
+		self.coord[xy] to an appropriate value.
 		"""
 		if not self.frames:
 			return
@@ -811,10 +815,13 @@ if {{"x11" eq [tk windowingsystem]}} {{
 			local_curcellx = 0
 		else:
 			local_curcellx = self.curcellx
-		vtup = self.frames[0][1].yview()
-		tmp_x = self.frames[local_curcellx][0].winfo_rootx() + 5
-		tmp_y = ENTRYHEIGHT * (self.curcelly - (self.length * vtup[0])) + 20 + \
-			self.frames[local_curcellx][0].winfo_rooty()
+		pseudo_lbl = self.frames[local_curcellx][0]
+		pseudo_lbx = self.frames[local_curcellx][1]
+		first_offset = pseudo_lbx.yview()[0]
+		entry_height = self._get_listbox_entry_height(pseudo_lbx)
+		tmp_x = pseudo_lbl.winfo_rootx() + 5
+		tmp_y = entry_height * (self.curcelly - (self.length * first_offset)) + \
+			20 + pseudo_lbl.winfo_rooty()
 		tmp_x = int(round(tmp_x))
 		tmp_y = int(round(tmp_y))
 		if tmp_y < 0:
@@ -842,22 +849,19 @@ if {{"x11" eq [tk windowingsystem]}} {{
 		self.__relay_focus()
 		if self.length == 0:
 			return
-		offset = event.widget.yview()[0] * self.length
-		tosel = int(floor((event.y + - BORDERWIDTH) / ENTRYHEIGHT) + offset)
-		if tosel < 0: return
-		if tosel >= self.length: tosel = self.length - 1
-		if tosel != self.curcelly:
-			event.widget.selection_clear(0, tk.END)
-			event.widget.selection_set(tosel)
+		tosel = self._get_index_from_mouse_y(self.frames[frameindex][1], event.y)
+		if tosel < 0:
+			return
+		if tosel >= self.length:
+			tosel = self.length - 1
 		self.curcelly = tosel
 		self.curcellx = frameindex
 		self.__selectionmod_callback()
-		self.coordx = self.frames[self.curcellx][0].winfo_rootx() + event.x
-		self.coordy = self.frames[self.curcellx][0].winfo_rooty() + 20 + event.y
-		self.master.event_generate("<<MultiframeSelect>>", when = "tail")
-		if button == self.options["rightclickbtn"]:
-			self.master.event_generate("<<MultiframeRightclick>>",
-				when = "tail")
+		self.coordx = self.frames[frameindex][0].winfo_rootx() + event.x
+		self.coordy = self.frames[frameindex][0].winfo_rooty() + 20 + event.y
+		self.event_generate("<<MultiframeSelect>>", when = "tail")
+		if button == self.rightclickbtn:
+			self.event_generate("<<MultiframeRightclick>>", when = "tail")
 
 	def __setindex_arr(self, direction):
 		"""
@@ -875,7 +879,7 @@ if {{"x11" eq [tk windowingsystem]}} {{
 		self.__selectionmod_callback()
 		for i in self.frames:
 			i[1].see(self.curcelly)
-		self.master.event_generate("<<MultiframeSelect>>", when = "tail")
+		self.event_generate("<<MultiframeSelect>>", when = "tail")
 
 	def __lengthmod_callback(self):
 		"""
@@ -946,4 +950,5 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 if __name__ == "__main__":
 	from multiframe_list.demo import run_demo
+	print("Running mfl", __version__)
 	run_demo()
