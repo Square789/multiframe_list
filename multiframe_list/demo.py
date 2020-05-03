@@ -124,7 +124,8 @@ def run_demo():
 		{"text": "bgstyle", "command": lambda: \
 			root.tk.eval("ttk::style configure . -background #{0}{0}{0}".format(
 				hex(randint(0, 255))[2:]
-			))}
+			))},
+		{"text": "conf", "command": lambda: mfl.config(listboxheight = randint(5,10))},
 	)
 
 	for b_args in btns:

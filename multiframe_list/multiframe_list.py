@@ -8,13 +8,12 @@ import tkinter as tk
 import tkinter.ttk as ttk
 from operator import itemgetter
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __author__ = "Square789"
 
 BLANK = ""
 
 _DEF_LISTBOX_WIDTH = 20
-
 _DEF_RCBTN = "3"
 
 _DEF_COL_OPT = {
@@ -27,11 +26,14 @@ _DEF_COL_OPT = {
 	"fallback_type": None
 }
 
+_DEF_MFL_OPT = {
+	"listboxheight": 10,
+}
+
 ALL = "all"
 END = "end"
 COLUMN = "column"
 ROW = "row"
-ENTRYHEIGHT = 16
 
 SORTSYM = ("\u25B2", "\u25BC", "\u25A0") #desc, asc, none
 
@@ -263,6 +265,7 @@ class MultiframeList(ttk.Frame):
 	Instantiates a multiframe tkinter based list
 
 	Arguments:
+	Instantiation only:
 	master - parent object, should be tkinter root or a tkinter widget
 
 	inicolumns <List<Dict>>: The columns here will be created and displayed
@@ -273,6 +276,10 @@ class MultiframeList(ttk.Frame):
 	rightclickbtn <Str>: The button that will trigger the MultiframeRightclick
 		virtual event. It is "3" (standard) on Windows, this may differ from
 		platform to platform.
+
+	Modifiable during runtime:
+	listboxheight <Int>: The height (In items) the listboxes will take up.
+		10 by tkinter default.
 
 	A terrible idea of a feature:
 		The MultiframeList will grab the currently active theme (as well as
@@ -307,10 +314,11 @@ class MultiframeList(ttk.Frame):
 		"selectforeground": "#FFFFFF",
 	}
 
-	def __init__(self, master, inicolumns = None, rightclickbtn = None):
+	def __init__(self, master, inicolumns = None, rightclickbtn = None, **kwargs):
 		super().__init__(master, takefocus = True)
 
 		self.master = master
+		self.cnf = _DEF_MFL_OPT.copy()
 
 		self.bind("<Down>", lambda _: self.__setindex_arr(1))
 		self.bind("<Up>", lambda _: self.__setindex_arr(-1))
@@ -336,6 +344,12 @@ class MultiframeList(ttk.Frame):
 		self.length = 0
 
 		self.rightclickbtn = rightclickbtn if rightclickbtn is not None else _DEF_RCBTN
+
+		for k in kwargs:
+			if not k in self.cnf:
+				raise ValueError("Unknown configuration argument: \"\"".format(k))
+			self.cnf[k] = kwargs[k]
+			getattr(self, "_cnf_{}".format(k))()
 
 		if inicolumns is not None:
 			self.addframes(len(inicolumns))
@@ -372,7 +386,7 @@ class MultiframeList(ttk.Frame):
 			self.frames[curindex][0].grid_columnconfigure(0, weight = 1)
 
 			self.frames[curindex].append(tk.Listbox(self.frames[curindex][0],
-				exportselection = False, takefocus = False))
+				exportselection = False, takefocus = False, height = self.cnf["listboxheight"]))
 			self.frames[curindex].append(ttk.Label(self.frames[curindex][0],
 				text = BLANK, anchor = tk.W, style = "MultiframeListTitle.TLabel"))
 			self.frames[curindex].append(ttk.Label(self.frames[curindex][0],
@@ -480,6 +494,19 @@ if {{"x11" eq [tk windowingsystem]}} {{
 		self.curcellx = None
 		self.curcelly = None
 		self.__lengthmod_callback()
+
+	def config(self, **kwargs):
+		"""
+		Change configuration options of the MultiframeList/underlying frame.
+		List of changeable options, all others will be routed to the frame:
+
+		-listboxheight
+		"""
+		l = kwargs.pop("listboxheight")
+		if l is not None:
+			self.cnf["listboxheight"] = l
+			self._cnf_listboxheight()
+		super().configure(**kwargs)
 
 	def configcolumn(self, col_id, **cnf):
 		"""
@@ -745,6 +772,14 @@ if {{"x11" eq [tk windowingsystem]}} {{
 			self.__scrollalllistbox(scroll, 1.0)
 
 	#====INTERNAL METHODS====
+
+	def _cnf_listboxheight(self):
+		"""
+		Callback for when the listbox height is changed via the
+		config method.
+		"""
+		for frame in self.frames:
+			frame[1].configure(height = self.cnf["listboxheight"])
 
 	def _get_col_by_id(self, col_id):
 		"""
