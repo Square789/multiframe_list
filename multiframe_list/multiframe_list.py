@@ -4,11 +4,13 @@ Its purpose is to display items and their properties over
 several colums and easily format, sort and manage them as part of a UI.
 """
 
+import os
+
 import tkinter as tk
 import tkinter.ttk as ttk
 from operator import itemgetter
 
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 __author__ = "Square789"
 
 BLANK = ""
@@ -322,7 +324,15 @@ class MultiframeList(ttk.Frame):
 
 		self.bind("<Down>", lambda _: self.__setindex_arr(1))
 		self.bind("<Up>", lambda _: self.__setindex_arr(-1))
-		self.bind("<KeyPress-App>", self.__callback_menu_button)
+		if os.name == "nt":
+			ctxtmen_btn = "App"
+		elif os.name == "posix":
+			ctxtmen_btn = "Menu"
+		else:
+			ctxtmen_btn = None
+
+		if ctxtmen_btn is not None:
+			self.bind("<KeyPress-{}>".format(ctxtmen_btn), self.__callback_menu_button)
 
 		self.ttkhookstyle = ttk.Style()
 		self.bind("<<ThemeChanged>>", self.__themeupdate)
