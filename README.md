@@ -41,6 +41,7 @@ item_display.addcolumns(
 item_display.assigncolumn("col_qty", 2)
 # Manually create a frame, a column and then display the
 # new column in the freshly created third frame
+# Same effect as if you had put the dict into the inicolumns tuple
 
 item_display.grid(sticky = "nesw")
 
@@ -49,8 +50,34 @@ item_display.setdata({
     "col_prices": [t[1] for t in items],
     "col_qty": [t[2] for t in items],
 })
-item_display.format() # In order to apply the price formatter
+item_display.format()
+# Required for the price formatter, else the column would display raw values
 
 root.mainloop()
 
+```
+Will result in this window:
+
+![<Image> Result of script above](example.PNG)  
+
+## Documentation
+
+Most information can be found in the docstrings of the MultiframeList's class and its methods.  
+Other than that:
+```
+ ~ ### ~ ~
+   *#*       
+ /  s  \
+
+             ___              _
+            /  -]  /|         |
+___n____m_-_|___|__||_____---_|__
+.             _          .       
+   .-.    ~         ___       ' .     
+ n_|:|       .    '           __ 
+ '-. |_n      _         _______   . 
+   | .-'                     __.      
+  _|:|___  *             -  [__/     
+   | |         ~   ===         
+    *  ___     .      - ---
 ```

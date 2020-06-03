@@ -10,7 +10,7 @@ import tkinter as tk
 import tkinter.ttk as ttk
 from operator import itemgetter
 
-__version__ = "2.2.0"
+__version__ = "2.2.1"
 __author__ = "Square789"
 
 BLANK = ""
@@ -89,15 +89,15 @@ class Column():
 		self.mfl = mfl
 		self.assignedframe = None
 
-		self.__cnfcmd = {
-			"name": self.__cnf_name, "sort": self.__cnf_sort,
-			"minsize": self.__cnf_grid, "weight": self.__cnf_grid,
-			"formatter": self.__cnf_formatter, "w_width": self.__cnf_w_width,
+		self._cnfcmd = {
+			"name": self._cnf_name, "sort": self._cnf_sort,
+			"minsize": self._cnf_grid, "weight": self._cnf_grid,
+			"formatter": self._cnf_formatter, "w_width": self._cnf_w_width,
 			"fallback_type": lambda: False,
 		}
 
 		if col_id is None:
-			self.col_id = self.__generate_col_id()
+			self.col_id = self._generate_col_id()
 		else:
 			for col in self.mfl.columns:
 				if col.col_id == col_id:
@@ -121,7 +121,7 @@ class Column():
 	def __len__(self):
 		return len(self.data)
 
-	def __generate_col_id(self):
+	def _generate_col_id(self):
 		curid = 0
 		idok = False
 		while not idok:
@@ -133,10 +133,10 @@ class Column():
 				idok = True
 		return curid
 
-	def __cnf_formatter(self): # NOTE: YES OR NO?
+	def _cnf_formatter(self): # NOTE: YES OR NO?
 		self.format()
 
-	def __cnf_grid(self):
+	def _cnf_grid(self):
 		if self.assignedframe is not None:
 			curr_grid = self.mfl.framecontainer.grid_columnconfigure(
 				self.assignedframe)
@@ -148,12 +148,12 @@ class Column():
 				self.mfl.framecontainer.grid_columnconfigure(self.assignedframe,
 					**callargs)
 
-	def __cnf_name(self):
+	def _cnf_name(self):
 		if self.assignedframe is not None:
 			self.mfl.frames[self.assignedframe][2].config(
 				text = self.cnf["name"] )
 
-	def __cnf_sort(self):
+	def _cnf_sort(self):
 		if self.assignedframe is not None:
 			if self.cnf["sort"]:
 				self.set_sortstate(self.sortstate)
@@ -163,7 +163,7 @@ class Column():
 				self.mfl.frames[self.assignedframe][3].configure(text = BLANK)
 				self.mfl.frames[self.assignedframe][2].unbind("<Button-1>")
 
-	def __cnf_w_width(self):
+	def _cnf_w_width(self):
 		if self.assignedframe is not None:
 			self.mfl.frames[self.assignedframe][1].configure(
 				width = self.cnf["w_width"])
@@ -172,11 +172,11 @@ class Column():
 		if not kw:
 			return self.cnf
 		for k in kw:
-			if not k in self.__cnfcmd:
+			if not k in self._cnfcmd:
 				raise ValueError("Unkown configuration arg \"{}\", must be "
-					"one of {}.".format(k, ", ".join(self.__cnfcmd.keys())))
+					"one of {}.".format(k, ", ".join(self._cnfcmd.keys())))
 			self.cnf[k] = kw[k]
-			self.__cnfcmd[k]()
+			self._cnfcmd[k]()
 
 	def data_clear(self):
 		"""Clears self.data, refreshes interface, if assigned a frame."""
@@ -244,10 +244,13 @@ class Column():
 	def setdisplay(self, wanted_frame):
 		"""
 		Sets the display frame of the column to wanted_frame. To unregister,
-		set it no None."""
+		set it no None.
+		May raise IndexError.
+		"""
 		self.assignedframe = wanted_frame
 		if self.assignedframe is not None:
-			for fnc in self.__cnfcmd.values(): fnc() # configure the frame
+			for fnc in self._cnfcmd.values():
+				fnc() # configure the frame
 			self.set_sortstate(self.sortstate)
 			self.mfl.frames[self.assignedframe][1].delete(0, tk.END)
 			self.mfl.frames[self.assignedframe][1].insert(tk.END, *self.data)
@@ -255,7 +258,9 @@ class Column():
 			# "setframetodata" method.
 
 	def set_sortstate(self, to):
-		"""Sets the column's sortstate, causing it to update on the UI."""
+		"""
+		Sets the column's sortstate, causing it to update on the UI.
+		"""
 		if self.assignedframe is not None:
 			if self.cnf["sort"]:
 				self.mfl.frames[self.assignedframe][3].configure(text = SORTSYM[to])
@@ -289,9 +294,8 @@ class MultiframeList(ttk.Frame):
 		configuration options in the current theme's style called
 		"MultiframeList.Listbox" to its listboxes, as those are not available
 		as ttk variants.
-		Further styling options are available to the column title and sort
-		indicator labels: "MultiframeListTitle.TLabel" and
-		"MultiframeListSortInd.TLabel"
+		The column title labels listen to the style "MultiframeListTitle.TLabel"
+		The column sort indicators listen to the style "MultiframeLisSortInd.Tlabel"
 	The list broadcasts the Virtual event "<<MultiframeSelect>>" to its parent
 		whenever something is selected.
 	The list broadcasts the Virtual event "<<MultiframeRightclick>>" to its
@@ -508,9 +512,10 @@ if {{"x11" eq [tk windowingsystem]}} {{
 	def config(self, **kwargs):
 		"""
 		Change configuration options of the MultiframeList/underlying frame.
-		List of changeable options, all others will be routed to the frame:
+		List of MultiframeList options, all others will be routed to the frame:
 
-		-listboxheight
+		-listboxheight: Height of the listboxes in displayed rows. Change this
+			if the tkinter default of 10 doesn't work out for you.
 		"""
 		l = kwargs.pop("listboxheight")
 		if l is not None:
@@ -607,7 +612,7 @@ if {{"x11" eq [tk windowingsystem]}} {{
 			self.frames.pop(i)
 
 	def removerow(self, index):
-		"""Will delete the entire row at index, visible or not visible."""
+		"""Will delete the entire row at index."""
 		if index > (self.length - 1):
 			raise IndexError("Index to remove out of range.")
 		for col in self.columns:
@@ -627,6 +632,8 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 	def insertrow(self, data, insindex = None):
 		"""
+		Inserts a row of data into the MultiframeList.
+
 		Data should be supplied in the shape of a dict where a key is a
 		column's id and the corresponding value is the element that should
 		be appended to the column.
@@ -643,12 +650,14 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 	def setdata(self, data, reset_sortstate = True):
 		"""
+		Sets the data of the MultiframeList, clearing everything beforehand.
+
 		Data has to be supplied as a dict where:
-		key is a column id and value is a list of values the column targeted by
-		key should be set to. If the lists are of differing lengths, an
-		exception will be raised.
-		The function takes a reset_sortstate parameter, that, when set to false,
-		will not reset the sortstate on the columns.
+			- key is a column id
+			- value is a list of values the column targeted by key should be set to.
+			If the lists are of differing lengths, a ValueError will be raised.
+		The function takes an optional reset_sortstate parameter to control whether
+		or not to reset the sortstates on the columns. (Default True)
 		"""
 		if not data:
 			self.clear(); return
@@ -685,14 +694,16 @@ if {{"x11" eq [tk windowingsystem]}} {{
 			return
 		for col in self.columns:
 			if len(col.data) != datalen:
-				raise ValueError("Length of supplied column data is"
-					" different from other lengths.")
+				raise ValueError("Length of supplied column data is "
+					"different from other lengths.")
 		targetcol.data_set(data)
 
 	#==DATA RETRIEVAL, DICT, ALL==
 
 	def getrows(self, start, end = None):
 		"""
+		Retrieve rows between a start and an optional end parameter.
+
 		If end is omitted, only the row indexed at start will be included.
 		If end is set to END, all data from start to the end of the
 		MultiframeListbox will be returned.
@@ -719,13 +730,8 @@ if {{"x11" eq [tk windowingsystem]}} {{
 		if end is None:
 			end = start + 1
 		col_id_map = {c.col_id: ci for ci, c in enumerate(self.columns)}
-		r_data = []
-		cols = tuple(self.columns)
-		for ind in range(start, end):
-			cur_row = []
-			for col in cols:
-				cur_row.append(col.data[ind])
-			r_data.append(cur_row)
+		r_data = [[col.data[idx] for col in self.columns] for idx in range(start, end)]
+		# Performance location: out the window, on the sidewalk
 		return r_data, col_id_map
 
 	def getcolumn(self, col_id):
@@ -742,10 +748,12 @@ if {{"x11" eq [tk windowingsystem]}} {{
 
 	def sort(self, _evt, call_col):
 		"""
-		This function will sort the list, modifying all column's data.
-		It is designed to only be called through labels, taking an event
-		placeholder as arg, followed by the calling column where id, sortstate
-		and - if needed - the fallback type are read from.
+		Sort the list, modifying all column's data.
+
+		This function is designed to only be called through labels,
+		taking an event placeholder (which is ignored), followed by the
+		calling column where id, sortstate and - if needed - the
+		fallback type are read from.
 		"""
 		sortstate = call_col.sortstate
 		caller_id = call_col.col_id
