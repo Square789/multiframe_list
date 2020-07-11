@@ -49,12 +49,9 @@ class Demo:
 			)),
 			tk.Button(self.root, text="lbstyle",  command=lambda: self.root.tk.eval(
 				"ttk::style configure MultiframeList.Listbox -background #{0}{0}{0} -foreground #0000{1:0>2}".format(
-					hex(randint(120, 255))[2:], hex(randint(0, 255))[2:]
-				)
-			)),
-			tk.Button(self.root, text="conf",     command=lambda: self.mfl.config(
-				listboxheight=randint(5, 10)
-			)),
+					hex(randint(120, 255))[2:], hex(randint(0, 255))[2:]))),
+			tk.Button(self.root, text="conf",     command=lambda: self.mfl.config(listboxheight=randint(5, 10))),
+			tk.Button(self.root, text="randsel",  command=self.randselection),
 		)
 		for btn in btns:
 			btn.pack(fill = tk.X, side = tk.LEFT)
@@ -99,6 +96,12 @@ class Demo:
 		print("-" * (l_elem + 1) * len(mapdict.keys()))
 		for row in outdat:
 			print("|".join(frmtstr.format(i, ml = l_elem) for i in row))
+
+	def randselection(self):
+		length = self.mfl.getlen()
+		if length < 1:
+			return
+		self.mfl.setselectedcell(0, randint(0, length - 1))
 
 	def remframe(self):
 		if len(self.mfl.frames) <= 7:

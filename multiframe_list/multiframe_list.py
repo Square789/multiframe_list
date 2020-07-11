@@ -10,7 +10,7 @@ import tkinter as tk
 import tkinter.ttk as ttk
 from operator import itemgetter
 
-__version__ = "2.2.1"
+__version__ = "2.3.0"
 __author__ = "Square789"
 
 BLANK = ""
@@ -620,13 +620,28 @@ if {{"x11" eq [tk windowingsystem]}} {{
 		self.length -= 1
 		self.__lengthmod_callback()
 
-	def setcell(self, col_to_mod, y, data):
-		"""Sets the cell in col_to_mod at y to data."""
-		col = self._get_col_by_id(col_to_mod)
-		if y > (self.length - 1):
-			raise IndexError("Cell index does not exist.")
-		col.data_pop(y)
-		col.data_insert(data, y)
+	def setselectedcell(self, x, y):
+		"""
+		Sets the selected cell to the specified x and y coordinates.
+		You may also pass None to any of those.
+		If outside of viewport, the frames will be scrolled towards the
+		new index.
+
+		Will generate a <<MultiframeSelect>> event.
+		"""
+		if not all(isinstance(v, (int, None)) for v in (x, y)):
+			raise TypeError("Invalid type for x and/or y coordinate.")
+		if x >= len(self.frames):
+			raise ValueError("New x selection out of range.")
+		if y >= self.length:
+			raise ValueError("New y selection exceeds length.")
+		self.curcellx = x
+		self.curcelly = y
+		if y is not None:
+			for i in self.frames:
+				i[1].see(self.curcelly)
+		self.__selectionmod_callback()
+		self.event_generate("<<MultiframeSelect>>", when = "tail")
 
 	#==DATA MODIFICATION, ALL==
 
@@ -677,11 +692,18 @@ if {{"x11" eq [tk windowingsystem]}} {{
 		self.curcellx, self.curcelly = None, None
 		self.__lengthmod_callback()
 
+	def setcell(self, col_to_mod, y, data):
+		"""Sets the cell in col_to_mod at y to data."""
+		col = self._get_col_by_id(col_to_mod)
+		if y > (self.length - 1):
+			raise IndexError("Cell index does not exist.")
+		col.data_pop(y)
+		col.data_insert(data, y)
+
 	def setcolumn(self, col_to_mod, data):
 		"""
 		Sets column specified by col_to_mod to data.
-		Raises an exception if length differs from the rest of the
-		columns.
+		Raises an exception if length differs from the rest of the columns.
 		"""
 		for col in self.columns:
 			col.set_sortstate(2)
@@ -850,9 +872,8 @@ if {{"x11" eq [tk windowingsystem]}} {{
 		Returns a list of references to the columns that are displaying
 		their data currently, sorted starting at 0.
 		"""
-		r = sorted([i for i in self.columns if i.assignedframe is not None],
+		return sorted([i for i in self.columns if i.assignedframe is not None],
 			key = lambda col: col.assignedframe)
-		return r
 
 	def __callback_menu_button(self, _):
 		"""
@@ -978,7 +999,7 @@ if {{"x11" eq [tk windowingsystem]}} {{
 		"""
 		Called after selection (self.curcell[x/y]) is modified.
 		Purely cosmetic effect, as actual selection access should only
-		occur via self.curcell()
+		occur via self.getselectedcell()
 		"""
 		sel = self.curcelly
 		if sel is None:
