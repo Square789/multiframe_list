@@ -141,8 +141,8 @@ class _Column():
 			raise TypeError("Bad Column parent, must be MultiframeList.")
 		self.mfl = mfl
 		self.assignedframe = None
-		self.being_dragged = False
-		self.being_pressed = None
+		self.dragged = False
+		self.pressed = None
 
 		self._cnfcmd = {
 			"name": self._cnf_name, "sort": self._cnf_sort,
@@ -212,21 +212,22 @@ class _Column():
 
 	def _label_on_buttonpress(self, evt):
 		print(f"Pressed {evt.widget}")
-		self.being_pressed = evt.x
+		self.pressed = evt.x
 
 	def _label_on_drag(self, evt):
-		if self.being_pressed is not None:
-			print(f"Dragging while on {evt.widget}")
-			if not self.being_dragged and abs(evt.x - self.being_pressed) > DRAG_THRES:
+		if self.pressed is not None:
+			if self.dragged:
+				self.mfl._on_column_drag(evt, self.assignedframe)
+			elif not self.dragged and abs(evt.x - self.pressed) > DRAG_THRES:
 				print(f"Now being dragged")
-				self.being_dragged = True
+				self.dragged = True
 
-	def _label_on_release(self, _):
-		print(f"Release from {_.widget}")
-		if not self.being_dragged:
+	def _label_on_release(self, evt):
+		print(f"Release from {evt.widget}")
+		if not self.dragged and self.cnf.sort:
 			self.mfl.sort(None, self)
-		self.being_dragged = False
-		self.being_pressed = None
+		self.dragged = False
+		self.pressed = None
 
 	def config(self, **kw):
 		if not kw:
@@ -387,14 +388,14 @@ class MultiframeList(ttk.Frame):
 	}
 
 	class Config():
-		__slots__ = ("listboxheight", "rightclickbtn", "draggable_columns")
+		__slots__ = ("listboxheight", "rightclickbtn", "reorderable")
 		def __init__(
 			self, listboxheight = 10, rightclickbtn = "3",
-			draggable_columns = False
+			reorderable = False
 		):
 			self.listboxheight = listboxheight
 			self.rightclickbtn = rightclickbtn
-			self.draggable_columns = draggable_columns
+			self.reorderable = reorderable
 
 	def __init__(self, master, inicolumns = None, **kwargs):
 		"""
@@ -416,6 +417,9 @@ class MultiframeList(ttk.Frame):
 
 		listboxheight <Int>: The height (In items) the listboxes will take up.
 			10 by tkinter default.
+
+		reorderable <Bool>: Whether the columns of the MultiframeList should be
+			reorderable by the user dragging and dropping the column headers.
 
 		"""
 		super().__init__(master, takefocus = True)
@@ -448,6 +452,7 @@ class MultiframeList(ttk.Frame):
 		self.framecontainer.grid_rowconfigure(0, weight = 1)
 		self.framecontainer.grid_columnconfigure(tk.ALL, weight = 1)
 
+		self.vert_highlight = ttk.Frame(self)
 		self.frames = [] # Each frame contains interface elements for display.
 		self.columns = {} # Columns will provide data storage capability as
 		# well as some metadata.
@@ -928,6 +933,10 @@ class MultiframeList(ttk.Frame):
 		borderwidth = int(lb["borderwidth"])
 		e_height = self._get_listbox_entry_height(lb)
 		return ((y_pos - borderwidth) // e_height) + offset
+
+	def _on_column_drag(self, event, sourcecol):
+		print(f"Drag on {sourcecol}")
+		self.vert_highlight.place(event.widget.x)
 
 	def _reset_sortstate(self):
 		"""
