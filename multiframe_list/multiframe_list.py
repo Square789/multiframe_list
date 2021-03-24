@@ -119,14 +119,15 @@ class _Column():
 		__slots__ = (
 			"name", "sort", "minsize", "weight", "w_width", "formatter", "fallback_type",
 		)
-		def __init__(self,
-				name = "<NO_NAME>",
-				sort = False,
-				minsize = 0,
-				weight = 1,
-				w_width = _DEF_LISTBOX_WIDTH,
-				formatter = None,
-				fallback_type = None,
+		def __init__(
+			self,
+			name = "<NO_NAME>",
+			sort = False,
+			minsize = 0,
+			weight = 1,
+			w_width = _DEF_LISTBOX_WIDTH,
+			formatter = None,
+			fallback_type = None,
 		):
 			self.name = name
 			self.sort = sort
@@ -211,19 +212,17 @@ class _Column():
 		self.mfl.frames[self.assignedframe][1].configure(width = self.cnf.w_width)
 
 	def _label_on_buttonpress(self, evt):
-		print(f"Pressed {evt.widget}")
 		self.pressed = evt.x
 
 	def _label_on_drag(self, evt):
 		if self.pressed is not None:
 			if self.dragged:
-				self.mfl._on_column_drag(evt, self.assignedframe)
+				self.mfl._on_column_drag(evt, self.col_id)
 			elif not self.dragged and abs(evt.x - self.pressed) > DRAG_THRES:
-				print(f"Now being dragged")
 				self.dragged = True
 
 	def _label_on_release(self, evt):
-		print(f"Release from {evt.widget}")
+		self.mfl._on_column_release(evt, self.col_id)
 		if not self.dragged and self.cnf.sort:
 			self.mfl.sort(None, self)
 		self.dragged = False
@@ -452,7 +451,7 @@ class MultiframeList(ttk.Frame):
 		self.framecontainer.grid_rowconfigure(0, weight = 1)
 		self.framecontainer.grid_columnconfigure(tk.ALL, weight = 1)
 
-		self.vert_highlight = ttk.Frame(self)
+		self.vert_highlight = tk.Frame(self, bg = "#AAAA00")
 		self.frames = [] # Each frame contains interface elements for display.
 		self.columns = {} # Columns will provide data storage capability as
 		# well as some metadata.
@@ -499,12 +498,16 @@ class MultiframeList(ttk.Frame):
 			new_frame[0].grid_rowconfigure(1, weight = 1)
 			new_frame[0].grid_columnconfigure(0, weight = 1)
 
-			new_frame[1] = tk.Listbox(new_frame[0],
-				exportselection = False, takefocus = False, height = self.cnf.listboxheight)
-			new_frame[2] = ttk.Label(new_frame[0],
-				text = BLANK, anchor = tk.W, style = "MultiframeListTitle.TLabel")
-			new_frame[3] = ttk.Label(new_frame[0],
-				text = BLANK, anchor = tk.W, style = "MultiframeListSortInd.TLabel")
+			new_frame[1] = tk.Listbox(
+				new_frame[0], exportselection = False, takefocus = False,
+				height = self.cnf.listboxheight
+			)
+			new_frame[2] = ttk.Label(
+				new_frame[0], text = BLANK, anchor = tk.W, style = "MultiframeListTitle.TLabel"
+			)
+			new_frame[3] = ttk.Label(
+				new_frame[0], text = BLANK, anchor = tk.W, style = "MultiframeListSortInd.TLabel"
+			)
 
 			instance_name = new_frame[1].bindtags()[0]
 			# REMOVE Listbox bindings from listboxes
@@ -899,6 +902,17 @@ class MultiframeList(ttk.Frame):
 			raise ValueError(f"No column with column id {col_id!r}!")
 		return col
 
+	def _get_frame_at_x(self, x):
+		"""
+		Return frame index of the frame at x, clamping to 0 and (len(self.frames) - 1).
+		"""
+		highlight_idx = -1
+		for frame in self.frames:
+			if frame[1].winfo_rootx() > x:
+				break
+			highlight_idx += 1
+		return max(highlight_idx, 0)
+
 	def _get_listbox_conf(self, listbox):
 		"""
 		Create a dict of style options based on the ttk Style settings
@@ -934,9 +948,29 @@ class MultiframeList(ttk.Frame):
 		e_height = self._get_listbox_entry_height(lb)
 		return ((y_pos - borderwidth) // e_height) + offset
 
-	def _on_column_drag(self, event, sourcecol):
-		print(f"Drag on {sourcecol}")
-		self.vert_highlight.place(event.widget.x)
+	def _on_column_release(self, event, col_id):
+		self.vert_highlight.place_forget()
+		tgt_frame = self._get_frame_at_x(event.widget.winfo_rootx() + event.x)
+		tgt_col = None
+		for tcol_id, col in self.columns.items():
+			if col.assignedframe == tgt_frame:
+				tgt_col = tcol_id
+				break
+		if tgt_col == col_id:
+			return
+		orig_frame = self.columns[col_id].assignedframe
+		self.columns[col_id].setdisplay(self.columns[tgt_col].assignedframe)
+		self.columns[tgt_col].setdisplay(orig_frame)
+
+	def _on_column_drag(self, event, col_id):
+		highlight_idx = self._get_frame_at_x(event.widget.winfo_rootx() + event.x)
+		print(f"Drag on {col_id}, {event.x}; {highlight_idx}")
+		self.vert_highlight.place(
+			x = self.frames[highlight_idx][0].winfo_x(),
+			y = self.frames[highlight_idx][1].winfo_y(),
+			width = 3, height = self.frames[highlight_idx][1].winfo_height()
+		)
+		self.vert_highlight.tkraise()
 
 	def _reset_sortstate(self):
 		"""
