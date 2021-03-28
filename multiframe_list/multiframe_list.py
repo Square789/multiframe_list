@@ -21,6 +21,10 @@ DRAG_THRES = 15
 ALL = "all"
 END = "end"
 
+class DRAGINTENT:
+	REORDER = 1
+	RESIZE = 2
+
 SORTSYM = ("\u25B2", "\u25BC", "\u25A0") #desc, asc, none
 
 SCROLLCOMMAND = \
@@ -218,6 +222,8 @@ class _Column():
 				self.mfl._on_column_drag(evt, self.assignedframe)
 			elif not self.dragged and abs(evt.x - self.pressed) > DRAG_THRES:
 				self.dragged = True
+		else:
+			pass # TODO continue dragging code here
 
 	def _label_on_release(self, evt):
 		if not self.dragged and self.cnf.sort:
@@ -1029,6 +1035,7 @@ class MultiframeList(ttk.Frame):
 		self.reorder_highlight.tkraise()
 
 	def _on_empty_frame_motion(self, evt, fidx):
+		self.frames[fidx][2].configure(cursor="sb_h_double_arrow")
 		if self.pressed_frame is not None:
 			if self.dragging:
 				self._on_column_drag(evt, fidx)
