@@ -20,8 +20,6 @@ DRAG_THRES = 15
 
 ALL = "all"
 END = "end"
-COLUMN = "column"
-ROW = "row"
 
 SORTSYM = ("\u25B2", "\u25BC", "\u25A0") #desc, asc, none
 
@@ -214,7 +212,7 @@ class _Column():
 	def _label_on_buttonpress(self, evt):
 		self.pressed = evt.x
 
-	def _label_on_drag(self, evt):
+	def _label_on_motion(self, evt):
 		if self.pressed is not None:
 			if self.dragged:
 				self.mfl._on_column_drag(evt, self.assignedframe)
@@ -314,23 +312,13 @@ class _Column():
 			self.being_dragged = self.being_pressed = False
 			# This block effectively undoes anything the `_cnf_*` methods and the block below
 			# do to the widgets and tries to get them into the default state.
-			frame_to_clean = self.mfl.frames[self.assignedframe]
-			frame_to_clean[3].configure(text = BLANK)
-			frame_to_clean[2].configure(text = BLANK)
-			frame_to_clean[2].unbind("<Button-1>")
-			frame_to_clean[2].unbind("<ButtonRelease-1>")
-			frame_to_clean[2].unbind("<Motion-1>")
-			frame_to_clean[1].delete(0, tk.END)
-			frame_to_clean[1].insert(0, *(BLANK for _ in range(self.mfl.length)))
-			self.mfl.framecontainer.grid_columnconfigure(self.assignedframe, weight = 1, minsize = 0)
-			frame_to_clean[1].configure(width = _DEF_LISTBOX_WIDTH)
-
+			self.mfl._clear_frame(self.assignedframe)
 			self.assignedframe = wanted_frame
 			return
 
 		self.assignedframe = wanted_frame
 		self.mfl.frames[self.assignedframe][2].bind("<ButtonPress-1>", self._label_on_buttonpress)
-		self.mfl.frames[self.assignedframe][2].bind("<Motion>", self._label_on_drag)
+		self.mfl.frames[self.assignedframe][2].bind("<Motion>", self._label_on_motion)
 		self.mfl.frames[self.assignedframe][2].bind("<ButtonRelease-1>", self._label_on_release)
 		self.set_sortstate(self.sortstate)
 		# NOTE: I don't think these two recurring lines warrant their own
@@ -453,6 +441,10 @@ class MultiframeList(ttk.Frame):
 		self.coordx = None
 		self.coordy = None
 
+		self.pressed_frame = None
+		self.pressed_x = None
+		self.dragging = False
+
 		self.scrollbar = ttk.Scrollbar(self, command = self.__scrollallbar)
 		self.framecontainer = ttk.Frame(self)
 		self.framecontainer.grid_rowconfigure(0, weight = 1)
@@ -502,6 +494,8 @@ class MultiframeList(ttk.Frame):
 			rcb = self.cnf.rightclickbtn
 			curindex = startindex + i
 
+			self.frames.append(new_frame)
+
 			new_frame[0] = ttk.Frame(self.framecontainer)
 			new_frame[0].grid_rowconfigure(1, weight = 1)
 			new_frame[0].grid_columnconfigure(0, weight = 1)
@@ -528,16 +522,16 @@ class MultiframeList(ttk.Frame):
 			new_frame[1].bind(f"<Button-{rcb}>", _handler_m3)
 			new_frame[1].bind("<Button-1>", _handler_m1)
 			self.tk.eval(SCROLLCOMMAND.format(w = new_frame[1]._w))
-			new_frame[1].config(yscrollcommand = self.__scrollalllistbox)
-			new_frame[1].insert(tk.END, *(BLANK for _ in range(self.length)))
-			new_frame[1].configure(self._get_listbox_conf(new_frame[1]))
+			new_frame[1].configure(
+				**self._get_listbox_conf(new_frame[1]),
+				yscrollcommand = self.__scrollalllistbox
+			)
+			self._clear_frame(curindex)
 
 			new_frame[3].grid(row = 0, column = 1, sticky = "news") # sort_indicator
 			new_frame[2].grid(row = 0, column = 0, sticky = "news") # label
 			new_frame[1].grid(row = 1, column = 0, sticky = "news", columnspan = 2) # listbox
 			new_frame[0].grid(row = 0, column = curindex, sticky = "news") # frame
-
-			self.frames.append(new_frame)
 
 		self._y_selection_redraw()
 
@@ -911,14 +905,20 @@ class MultiframeList(ttk.Frame):
 		"""
 		tgt_frame = self.frames[frame_idx]
 		tgt_frame[1].delete(0, tk.END)
-		tgt_frame[1].insert(0, *(BLANK for _ in range(self.mfl.length)))
+		tgt_frame[1].insert(0, *(BLANK for _ in range(self.length)))
 		tgt_frame[1].configure(width = _DEF_LISTBOX_WIDTH)
 		tgt_frame[2].configure(text = BLANK)
-		tgt_frame[2].bind("<Button-1>", self._on_empty_frame_press)
-		tgt_frame[2].bind("<ButtonRelease-1>", self._on_empty_frame_release)
-		tgt_frame[2].bind("<Motion-1>", self._on_empty_frame_drag)
+		tgt_frame[2].bind("<Button-1>",
+			lambda e: self._on_empty_frame_press(e, frame_idx)
+		)
+		tgt_frame[2].bind("<ButtonRelease-1>",
+			lambda e: self._on_empty_frame_release(e, frame_idx)
+		)
+		tgt_frame[2].bind("<Motion>",
+			lambda e: self._on_empty_frame_motion(e, frame_idx)
+		)
 		tgt_frame[3].configure(text = BLANK)
-		self.mfl.framecontainer.grid_columnconfigure(self.assignedframe, weight = 1, minsize = 0)
+		self.framecontainer.grid_columnconfigure(frame_idx, weight = 1, minsize = 0)
 
 	def _get_col_by_id(self, col_id):
 		"""
@@ -1028,13 +1028,22 @@ class MultiframeList(ttk.Frame):
 		)
 		self.reorder_highlight.tkraise()
 
-	def _on_empty_frame_drag(self, _):
-		
+	def _on_empty_frame_motion(self, evt, fidx):
+		if self.pressed_frame is not None:
+			if self.dragging:
+				self._on_column_drag(evt, fidx)
+			elif not self.dragging and abs(evt.x - self.pressed_x) > DRAG_THRES:
+				self.dragging = True
 
-	def _on_empty_frame_press(self, _):
-		self.pressed_frame = 
+	def _on_empty_frame_press(self, evt, fidx):
+		self.pressed_frame = fidx
+		self.pressed_x = evt.x
 
-	def _on_empty_frame_release(self, _):
+	def _on_empty_frame_release(self, evt, fidx):
+		if self.dragging:
+			self._on_column_release(evt, fidx)
+		self.pressed_frame = self.pressed_x = None
+		self.dragging = False
 
 	def _swap_by_frame(self, tgt_frame, src_frame):
 		"""
