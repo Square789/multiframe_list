@@ -217,14 +217,15 @@ class _Column():
 	def _label_on_drag(self, evt):
 		if self.pressed is not None:
 			if self.dragged:
-				self.mfl._on_column_drag(evt, self)
+				self.mfl._on_column_drag(evt, self.assignedframe)
 			elif not self.dragged and abs(evt.x - self.pressed) > DRAG_THRES:
 				self.dragged = True
 
 	def _label_on_release(self, evt):
-		self.mfl._on_column_release(evt, self)
 		if not self.dragged and self.cnf.sort:
 			self.mfl.sort(None, self)
+		if self.dragged:
+			self.mfl._on_column_release(evt, self.assignedframe)
 		self.dragged = False
 		self.pressed = None
 
@@ -428,10 +429,10 @@ class MultiframeList(ttk.Frame):
 
 		self.bind("<Up>", lambda _: self._on_arr_y(-1))
 		self.bind("<Down>", lambda _: self._on_arr_y(1))
-		self.bind("<Left>", lambda _: self._on_arr_x(-1))
-		self.bind("<Right>", lambda _: self._on_arr_x(1))
-		self.bind("<Control-Left>", lambda _: self._on_ctrl_arr_x(-1))
-		self.bind("<Control-Right>", lambda _: self._on_ctrl_arr_x(1))
+		self.bind("<Left>", lambda _: self._on_arr_x(-1, False))
+		self.bind("<Right>", lambda _: self._on_arr_x(1, False))
+		self.bind("<Control-Left>", lambda _: self._on_arr_x(-1, True))
+		self.bind("<Control-Right>", lambda _: self._on_arr_x(1, True))
 		self.bind("d", lambda _: print(self.curcellx, self.curcelly))
 		self.bind("D", lambda _: print(self.curcellx, self.curcelly))
 		if os.name == "nt":
@@ -457,7 +458,8 @@ class MultiframeList(ttk.Frame):
 		self.framecontainer.grid_rowconfigure(0, weight = 1)
 		self.framecontainer.grid_columnconfigure(tk.ALL, weight = 1)
 
-		self.vert_highlight = ttk.Frame(self, style = "MultiframeListReorderInd.TFrame")
+		self.resize_highlight = ttk.Frame(self, style = "MultiframeListResizeInd.TFrame")
+		self.reorder_highlight = ttk.Frame(self, style = "MultiframeListReorderInd.TFrame")
 		self.frames = [] # Each frame contains interface elements for display.
 		self.columns = {} # Columns will provide data storage capability as
 		# well as some metadata.
@@ -530,14 +532,14 @@ class MultiframeList(ttk.Frame):
 			new_frame[1].insert(tk.END, *(BLANK for _ in range(self.length)))
 			new_frame[1].configure(self._get_listbox_conf(new_frame[1]))
 
-			# new_frame[2].bind("<Button-1>", self._on_unlabeled)
-
 			new_frame[3].grid(row = 0, column = 1, sticky = "news") # sort_indicator
 			new_frame[2].grid(row = 0, column = 0, sticky = "news") # label
 			new_frame[1].grid(row = 1, column = 0, sticky = "news", columnspan = 2) # listbox
 			new_frame[0].grid(row = 0, column = curindex, sticky = "news") # frame
 
 			self.frames.append(new_frame)
+
+		self._y_selection_redraw()
 
 	def assigncolumn(self, col_id, req_frame):
 		"""
@@ -554,13 +556,14 @@ class MultiframeList(ttk.Frame):
 					)
 		col = self._get_col_by_id(col_id)
 		col.setdisplay(req_frame)
+		self._y_selection_redraw()
 
 	def clear(self):
 		"""Clears the MultiframeList."""
 		for col in self.columns.values():
 			col.data_clear()
 		self.length = 0
-		self.curcellx = None
+		self._set_curcellx(None)
 		self.curcelly = None
 		self.__lengthmod_callback()
 
@@ -611,7 +614,7 @@ class MultiframeList(ttk.Frame):
 		else:
 			for col_id in targetcols:
 				self._get_col_by_id(col_id).format(exclusively = indices)
-		self.__selectionmod_callback()
+		self._y_selection_redraw()
 
 	def getcolumns(self):
 		"""
@@ -660,7 +663,7 @@ class MultiframeList(ttk.Frame):
 				col.setdisplay(None)
 		for i in to_purge:
 			if self.curcellx is not None and self.curcellx >= i:
-				self.curcellx = i - 1
+				self._set_curcellx(i - 1)
 			self.frames[i][0].destroy()
 			self.frames.pop(i)
 
@@ -675,16 +678,16 @@ class MultiframeList(ttk.Frame):
 		"""
 		if not all(isinstance(v, (int, None)) for v in (x, y)):
 			raise TypeError("Invalid type for x and/or y coordinate.")
-		if x >= len(self.frames):
+		if isinstance(x, int) and x >= len(self.frames):
 			raise ValueError("New x selection out of range.")
-		if y >= self.length:
+		if isinstance(y, int) and y >= self.length:
 			raise ValueError("New y selection exceeds length.")
-		self.curcellx = x
+		self._set_curcellx(x)
 		self.curcelly = y
 		if y is not None:
 			for i in self.frames:
 				i[1].see(self.curcelly)
-		self.__selectionmod_callback()
+		self._y_selection_redraw()
 		self.event_generate("<<MultiframeSelect>>", when = "tail")
 
 	#==DATA MODIFICATION, ALL==
@@ -746,8 +749,9 @@ class MultiframeList(ttk.Frame):
 			else:
 				col.data_set([BLANK for _ in range(ln)])
 		self.length = ln
-		self.curcellx, self.curcelly = None, None
 		self.__lengthmod_callback()
+		self._set_curcellx(None)
+		self.curcelly = None
 
 	def setcell(self, col_to_mod, y, data, reset_sortstate = True):
 		"""
@@ -847,9 +851,7 @@ class MultiframeList(ttk.Frame):
 		"""
 		sortstate = call_col.sortstate
 		caller_id = call_col.col_id
-		scroll = None
-		if len(self.frames) != 0:
-			scroll = self.frames[0][1].yview()[0]
+		scroll = self._scroll_get()
 		new_sortstate = abs(int(sortstate) - 1)
 		rev = bool(new_sortstate)
 		call_col.set_sortstate(new_sortstate)
@@ -873,8 +875,7 @@ class MultiframeList(ttk.Frame):
 			newdat[col_id] = [i[datacol_i] for i in tmpdat]
 		self.setdata(newdat, reset_sortstate = False)
 		self.format()
-		if scroll is not None:
-			self.__scrollalllistbox(scroll, 1.0)
+		self._scroll_restore(scroll)
 
 	#====INTERNAL METHODS - cnf====
 
@@ -901,6 +902,24 @@ class MultiframeList(ttk.Frame):
 
 	#====INTERNAL METHODS====
 
+	def _clear_frame(self, frame_idx):
+		"""
+		Will set up default bindings on a frame, and clear its label,
+		sort and listbox, as well as reset its grid manager parameters.
+		Usable for a part of the work that goes into removing a column
+		from a frame or initial setup.
+		"""
+		tgt_frame = self.frames[frame_idx]
+		tgt_frame[1].delete(0, tk.END)
+		tgt_frame[1].insert(0, *(BLANK for _ in range(self.mfl.length)))
+		tgt_frame[1].configure(width = _DEF_LISTBOX_WIDTH)
+		tgt_frame[2].configure(text = BLANK)
+		tgt_frame[2].bind("<Button-1>", self._on_empty_frame_press)
+		tgt_frame[2].bind("<ButtonRelease-1>", self._on_empty_frame_release)
+		tgt_frame[2].bind("<Motion-1>", self._on_empty_frame_drag)
+		tgt_frame[3].configure(text = BLANK)
+		self.mfl.framecontainer.grid_columnconfigure(self.assignedframe, weight = 1, minsize = 0)
+
 	def _get_col_by_id(self, col_id):
 		"""
 		Returns the column specified by col_id, raises an exception if it
@@ -913,7 +932,8 @@ class MultiframeList(ttk.Frame):
 
 	def _get_frame_at_x(self, x):
 		"""
-		Return frame index of the frame at x, clamping to 0 and (len(self.frames) - 1).
+		Return frame index of the frame at screen pixel position x,
+		clamping to 0 and (len(self.frames) - 1).
 		"""
 		highlight_idx = -1
 		for frame in self.frames:
@@ -922,16 +942,17 @@ class MultiframeList(ttk.Frame):
 			highlight_idx += 1
 		return max(highlight_idx, 0)
 
-	def _get_listbox_conf(self, listbox):
+	def _get_listbox_conf(self, listbox, xactive = False):
 		"""
-		Create a dict of style options based on the ttk Style settings
-		that listboxes can be directly configured with.
+		Create a dict of style options based on the ttk Style settings in
+		`style_identifier` that listboxes can be directly configured with.
 
 		The listbox passed to the method will be queried for its config and
 		only configuration keys it returns present in the output dict.
 		"""
 		conf = self._DEFAULT_LISTBOX_CONFIG.copy()
-		for style in (".", "MultiframeList.Listbox"):
+		to_query = (".", "MultiframeList.Listbox")
+		for style in to_query + (("XActive.MultiframeList.Listbox", ) if xactive else ()):
 			cur_style_cnf = self.ttkhookstyle.configure(style)
 			if cur_style_cnf is not None:
 				conf.update(cur_style_cnf)
@@ -957,18 +978,25 @@ class MultiframeList(ttk.Frame):
 		e_height = self._get_listbox_entry_height(lb)
 		return ((y_pos - borderwidth) // e_height) + offset
 
-	def _on_arr_x(self, direction):
+	def _on_arr_x(self, direction, with_ctrl):
 		"""
 		Executed when the MultiframeList receives <Left> and <Right> events,
-		triggered by the user pressing the arrow keys.
+		triggered by the user pressing the arrow keys. Optionally these
+		may also have been called with the ctrl key held.
+		If with_ctrl is specified, the contents of the currently active
+		frame will be swapped with the one next to it.
 		"""
 		if self.curcelly is None and self.length > 0:
 			self.curcelly = 0
-			self.__selectionmod_callback()
-		newx = 0 if self.curcellx is None else self.curcellx + direction
+			self._y_selection_redraw()
+		oldx = self.curcellx
+		newx = 0 if oldx is None else oldx + direction
 		if newx < 0 or newx > len(self.frames) - 1:
 			return
-		self.curcellx = newx
+		self._set_curcellx(newx)
+		if with_ctrl and oldx is not None:
+			self._swap_by_frame(oldx, newx)
+			self._y_selection_redraw()
 
 	def _on_arr_y(self, direction):
 		"""
@@ -976,21 +1004,37 @@ class MultiframeList(ttk.Frame):
 		triggered by the user pressing the arrow keys.
 		"""
 		if self.curcellx is None and self.frames:
-			self.curcellx = 0
-		tosel = 0 if self.curcelly is None else self.curcelly + direction
-		if tosel < 0 or tosel > self.length - 1:
+			self._set_curcellx(0)
+		newy = 0 if self.curcelly is None else self.curcelly + direction
+		if newy < 0 or newy > self.length - 1:
 			return
-		self.curcelly = tosel
-		self.__selectionmod_callback()
+		self.curcelly = newy
+		self._y_selection_redraw()
 		for i in self.frames:
 			i[1].see(self.curcelly)
 		self.event_generate("<<MultiframeSelect>>", when = "tail")
 
-	def _on_column_release(self, event, released_col):
-		self.vert_highlight.place_forget()
+	def _on_column_release(self, event, released_frame):
+		self.reorder_highlight.place_forget()
 		tgt_frame = self._get_frame_at_x(event.widget.winfo_rootx() + event.x)
-		orig_frame = released_col.assignedframe
-		self._swap_by_frame(tgt_frame, orig_frame)
+		self._swap_by_frame(tgt_frame, released_frame)
+
+	def _on_column_drag(self, event, dragged_frame):
+		highlight_idx = self._get_frame_at_x(event.widget.winfo_rootx() + event.x)
+		self.reorder_highlight.place(
+			x = self.frames[highlight_idx][0].winfo_x(),
+			y = self.frames[highlight_idx][1].winfo_y(),
+			width = 3, height = self.frames[highlight_idx][1].winfo_height()
+		)
+		self.reorder_highlight.tkraise()
+
+	def _on_empty_frame_drag(self, _):
+		
+
+	def _on_empty_frame_press(self, _):
+		self.pressed_frame = 
+
+	def _on_empty_frame_release(self, _):
 
 	def _swap_by_frame(self, tgt_frame, src_frame):
 		"""
@@ -1001,33 +1045,59 @@ class MultiframeList(ttk.Frame):
 		for tcol_id, col in self.columns.items():
 			if col.assignedframe == tgt_frame:
 				tgt_col = self.columns[tcol_id]
-			elif col.assignedframe == src_frame:
+			if col.assignedframe == src_frame:
 				src_col = self.columns[tcol_id]
 		if tgt_col is src_col: # They're the same or both None, no action required
 			return
+		scroll = self._scroll_get()
 		if src_col is not None: src_col.setdisplay(None)
 		if tgt_col is not None: tgt_col.setdisplay(None)
 		if src_col is not None: src_col.setdisplay(tgt_frame)
 		if tgt_col is not None: tgt_col.setdisplay(src_frame)
+		self._scroll_restore(scroll)
+		self._y_selection_redraw()
 
-	def _on_column_drag(self, event, dragged_col):
-		highlight_idx = self._get_frame_at_x(event.widget.winfo_rootx() + event.x)
-		self.vert_highlight.place(
-			x = self.frames[highlight_idx][0].winfo_x(),
-			y = self.frames[highlight_idx][1].winfo_y(),
-			width = 3, height = self.frames[highlight_idx][1].winfo_height()
-		)
-		self.vert_highlight.tkraise()
-
-	def _on_ctrl_arr_x(self, direction):
-		if self.curcellx is None and self.frames:
-			self.curcellx = 0
-		current_frame = self.curcellx
-		swap_frame = self.curcellx + direction
-		if swap_frame < 0 or swap_frame > len(self.frames) - 1:
+	def _y_selection_redraw(self):
+		"""
+		Should be called after `self.curcelly` is modified.
+		Purely cosmetic effect, as actual selection access should only
+		occur via self.getselectedcell()
+		"""
+		sel = self.curcelly
+		if sel is None:
+			for i in self.frames:
+				i[1].selection_clear(0, tk.END)
 			return
-		self.curcellx = swap_frame
-		self._swap_by_frame(current_frame, swap_frame)
+		for i in self.frames:
+			i[1].selection_clear(0, tk.END)
+			i[1].selection_set(sel)
+			i[1].activate(sel)
+
+	def _set_curcellx(self, new_x):
+		"""
+		Use this for any change to `self.curcellx`.
+		Will configure the `XActive` style appropiately.
+		NOTE maybe use a @property setter?
+		"""
+		old_x = self.curcellx
+		self.curcellx = new_x
+		if old_x is not None:
+			self.frames[old_x][1].configure(
+				**self._get_listbox_conf(self.frames[old_x][1])
+			)
+		if new_x is not None:
+			self.frames[new_x][1].configure(
+				**self._get_listbox_conf(self.frames[new_x][1], True)
+			)
+
+	def _scroll_get(self):
+		if not self.frames:
+			return None
+		return self.frames[0][1].yview()[0]
+
+	def _scroll_restore(self, scroll):
+		if scroll is not None:
+			self.__scrollalllistbox(scroll, 1.0)
 
 	def _reset_sortstate(self):
 		"""
@@ -1100,8 +1170,8 @@ class MultiframeList(ttk.Frame):
 		if tosel >= self.length:
 			tosel = self.length - 1
 		self.curcelly = tosel
-		self.curcellx = frameindex
-		self.__selectionmod_callback()
+		self._set_curcellx(frameindex)
+		self._y_selection_redraw()
 		self.coordx = self.frames[frameindex][0].winfo_rootx() + event.x
 		self.coordy = self.frames[frameindex][0].winfo_rooty() + 20 + event.y
 		self.event_generate("<<MultiframeSelect>>", when = "tail")
@@ -1129,7 +1199,7 @@ class MultiframeList(ttk.Frame):
 			self.curcelly = self.length - 1
 		if self.curcelly < 0:
 			self.curcelly = None
-		self.__selectionmod_callback()
+		self._y_selection_redraw()
 
 	def __scrollallbar(self, *args):
 		"""Bound to the scrollbar; Will scroll listboxes."""
@@ -1145,22 +1215,6 @@ class MultiframeList(ttk.Frame):
 			i[1].yview_moveto(a)
 		self.scrollbar.set(a, b)
 
-	def __selectionmod_callback(self):
-		"""
-		Called after selection (self.curcell[x/y]) is modified.
-		Purely cosmetic effect, as actual selection access should only
-		occur via self.getselectedcell()
-		"""
-		sel = self.curcelly
-		if sel is None:
-			for i in self.frames:
-				i[1].selection_clear(0, tk.END)
-			return
-		for i in self.frames:
-			i[1].selection_clear(0, tk.END)
-			i[1].selection_set(sel)
-			i[1].activate(sel)
-
 	def __themeupdate(self, _):
 		"""
 		Called from event binding when the current theme changes.
@@ -1168,11 +1222,10 @@ class MultiframeList(ttk.Frame):
 		"""
 		if self.frames:
 			conf = self._get_listbox_conf(self.frames[0][1])
-		for i in self.frames:
-			lbwidg = i[1]
-			lbwidg.configure(**conf)
+			axconf = self._get_listbox_conf(self.frames[0][1], True)
+		for i, f in enumerate(self.frames):
+			f[1].configure(**(axconf if i == self.curcellx else conf))
 
 if __name__ == "__main__":
 	from multiframe_list.demo import run_demo
-	print("Running mfl", __version__)
 	run_demo()

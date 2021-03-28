@@ -14,6 +14,10 @@ def priceconv(data):
 class Demo:
 	def __init__(self):
 		self.root = tk.Tk()
+		self.root.bind(
+			"<<MultiframeRightclick>>",
+			lambda e: print("Rightclick on", e.widget, "@", self.mfl.coordx, self.mfl.coordy)
+		)
 		self.mfl = MultiframeList(self.root, inicolumns=(
 			{"name": "Small", "w_width": 10},
 			{"name": "Sortercol", "col_id": "sorter"},
@@ -24,8 +28,10 @@ class Demo:
 		))
 		self.mfl.configcolumn("sickocol", formatter = priceconv)
 		self.mfl.configcolumn("sorter", sort = True)
-		self.mfl.configcolumn("cnfcl", name = "Configured Name", sort = True,
-			fallback_type = lambda x: int("0" + str(x)))
+		self.mfl.configcolumn(
+			"cnfcl", name = "Configured Name", sort = True,
+			fallback_type = lambda x: int("0" + str(x))
+		)
 		self.mfl.pack(expand = 1, fill = tk.BOTH)
 		self.mfl.addframes(2)
 		self.mfl.removeframes(1)
@@ -47,9 +53,12 @@ class Demo:
 			tk.Button(self.root, text="bgstyle",  command=lambda: self.root.tk.eval(
 				"ttk::style configure . -background #{0}{0}{0}".format(hex(randint(50, 255))[2:])
 			)),
-			tk.Button(self.root, text="lbstyle",  command=lambda: self.root.tk.eval(
-				"ttk::style configure MultiframeList.Listbox -background #{0}{0}{0} -foreground #0000{1:0>2}".format(
-					hex(randint(120, 255))[2:], hex(randint(0, 255))[2:]))),
+			tk.Button(self.root, text="lbstyle",  command=lambda: self.root.tk.eval((
+					"ttk::style configure MultiframeList.Listbox -background #{0}{0}{0} -foreground #0000{1:0>2}\n"
+					"ttk::style configure XActive.MultiframeList.Listbox -selectbackground #0000{0}\n"
+					"ttk::style configure MultiframeListReorderInd.TFrame -background #00{0}00"
+				).format(hex(randint(120, 255))[2:], hex(randint(0, 255))[2:])
+			)),
 			tk.Button(self.root, text="conf",     command=lambda: self.mfl.config(listboxheight=randint(5, 10))),
 			tk.Button(self.root, text="randsel",  command=self.randselection),
 		)
