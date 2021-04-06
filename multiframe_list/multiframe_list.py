@@ -17,6 +17,8 @@ BLANK = ""
 
 _DEF_LISTBOX_WIDTH = 20
 DRAG_THRES = 15
+MIN_WIDTH = 30
+WEIGHT = 1000
 
 ALL = "all"
 END = "end"
@@ -24,6 +26,11 @@ END = "end"
 class DRAGINTENT:
 	REORDER = 1
 	RESIZE = 2
+
+def _drag_intent(x, frame):
+	if x < (MIN_WIDTH // 2) and frame != 0:
+		return DRAGINTENT.RESIZE
+	return DRAGINTENT.REORDER
 
 SORTSYM = ("\u25B2", "\u25BC", "\u25A0") #desc, asc, none
 
@@ -101,7 +108,8 @@ class _Column():
 		possible that the listbox stretches further than it should.
 		! NOT TO BE CONFUSED WITH minsize !
 	minsize: Specify the minimum amount of pixels the column should occupy.
-		This option gets passed to the grid geometry manager.
+		This option gets passed to the grid geometry manager. It will be 60 px
+		at minimum.
 		! NOT TO BE CONFUSED WITH w_width !
 	weight: Weight parameter according to the grid geometry manager.
 	formatter: A function that formats each element in a column's datalist.
@@ -149,7 +157,7 @@ class _Column():
 
 		self._cnfcmd = {
 			"name": self._cnf_name, "sort": self._cnf_sort,
-			"minsize": self._cnf_grid, "weight": self._cnf_grid,
+			"minsize": self._cnf_minsize, "weight": lambda: False,
 			"formatter": self._cnf_formatter, "w_width": self._cnf_w_width,
 			"fallback_type": lambda: False,
 		}
@@ -184,16 +192,23 @@ class _Column():
 	def _cnf_formatter(self): # NOTE: YES OR NO?
 		self.format()
 
-	def _cnf_grid(self):
+	# def _cnf_grid(self):
+	#	if self.assignedframe is None:
+	#		return
+	#	cur_grid = self.mfl.framecontainer.grid_columnconfigure(self.assignedframe)
+	#	callargs = {}
+	#	for value in ("minsize", ):
+	#		if cur_grid[value] != getattr(self.cnf, value):
+	#			callargs[value] = getattr(self.cnf, value)
+	#	if callargs:
+	#		self.mfl.framecontainer.grid_columnconfigure(self.assignedframe, **callargs)
+
+	def _cnf_minsize(self):
 		if self.assignedframe is None:
 			return
-		cur_grid = self.mfl.framecontainer.grid_columnconfigure(self.assignedframe)
-		callargs = {}
-		for value in ("minsize", "weight"):
-			if cur_grid[value] != getattr(self.cnf, value):
-				callargs[value] = getattr(self.cnf, value)
-		if callargs:
-			self.mfl.framecontainer.grid_columnconfigure(self.assignedframe, **callargs)
+		self.mfl.framecontainer.grid_columnconfigure(
+			self.assignedframe, minsize = max(self.cnf.minsize, MIN_WIDTH)
+		)
 
 	def _cnf_name(self):
 		if self.assignedframe is None:
@@ -216,20 +231,25 @@ class _Column():
 	def _label_on_buttonpress(self, evt):
 		self.pressed = evt.x
 
+	def _label_on_leave(self, evt):
+		evt.widget.configure(cursor = "arrow")
+
 	def _label_on_motion(self, evt):
 		if self.pressed is not None:
 			if self.dragged:
-				self.mfl._on_column_drag(evt, self.assignedframe)
+				self.mfl._on_column_drag(evt, self.assignedframe, self.dragged)
 			elif not self.dragged and abs(evt.x - self.pressed) > DRAG_THRES:
-				self.dragged = True
+				self.dragged = _drag_intent(self.pressed, self.assignedframe)
 		else:
-			pass # TODO continue dragging code here
+			cur = "sb_h_double_arrow" if \
+				_drag_intent(evt.x, self.assignedframe) == DRAGINTENT.RESIZE else "arrow"
+			evt.widget.configure(cursor = cur)
 
 	def _label_on_release(self, evt):
 		if not self.dragged and self.cnf.sort:
 			self.mfl.sort(None, self)
-		if self.dragged:
-			self.mfl._on_column_release(evt, self.assignedframe)
+		elif self.dragged:
+			self.mfl._on_column_release(evt, self.assignedframe, self.dragged)
 		self.dragged = False
 		self.pressed = None
 
@@ -324,6 +344,7 @@ class _Column():
 
 		self.assignedframe = wanted_frame
 		self.mfl.frames[self.assignedframe][2].bind("<ButtonPress-1>", self._label_on_buttonpress)
+		self.mfl.frames[self.assignedframe][2].bind("<Leave>", self._label_on_leave)
 		self.mfl.frames[self.assignedframe][2].bind("<Motion>", self._label_on_motion)
 		self.mfl.frames[self.assignedframe][2].bind("<ButtonRelease-1>", self._label_on_release)
 		self.set_sortstate(self.sortstate)
@@ -331,7 +352,7 @@ class _Column():
 		# "setframetodata" method.
 		self.mfl.frames[self.assignedframe][1].delete(0, tk.END)
 		self.mfl.frames[self.assignedframe][1].insert(tk.END, *self.data)
-		for fnc in self._cnfcmd.values():
+		for fnc in set(self._cnfcmd.values()):
 			fnc()
 
 	def set_sortstate(self, to):
@@ -454,10 +475,14 @@ class MultiframeList(ttk.Frame):
 		self.scrollbar = ttk.Scrollbar(self, command = self.__scrollallbar)
 		self.framecontainer = ttk.Frame(self)
 		self.framecontainer.grid_rowconfigure(0, weight = 1)
-		self.framecontainer.grid_columnconfigure(tk.ALL, weight = 1)
+		self._listboxheight_hack = ttk.Frame(self, width = 0)
 
-		self.resize_highlight = ttk.Frame(self, style = "MultiframeListResizeInd.TFrame")
-		self.reorder_highlight = ttk.Frame(self, style = "MultiframeListReorderInd.TFrame")
+		self.resize_highlight = ttk.Frame(
+			self.framecontainer, style = "MultiframeListResizeInd.TFrame"
+		)
+		self.reorder_highlight = ttk.Frame(
+			self.framecontainer, style = "MultiframeListReorderInd.TFrame"
+		)
 		self.frames = [] # Each frame contains interface elements for display.
 		self.columns = {} # Columns will provide data storage capability as
 		# well as some metadata.
@@ -475,6 +500,7 @@ class MultiframeList(ttk.Frame):
 
 		self.scrollbar.pack(fill = tk.Y, expand = 0, side = tk.RIGHT)
 		self.framecontainer.pack(expand = 1, fill = tk.BOTH, side = tk.RIGHT)
+		self._listboxheight_hack.pack(expand = 0, fill = tk.Y, side = tk.RIGHT)
 
 	#====USER METHODS====
 
@@ -538,6 +564,9 @@ class MultiframeList(ttk.Frame):
 			new_frame[2].grid(row = 0, column = 0, sticky = "news") # label
 			new_frame[1].grid(row = 1, column = 0, sticky = "news", columnspan = 2) # listbox
 			new_frame[0].grid(row = 0, column = curindex, sticky = "news") # frame
+			new_frame[0].grid_propagate(False)
+
+			self._listboxheight_hack.configure(height = new_frame[1].winfo_reqheight())
 
 		self._y_selection_redraw()
 
@@ -664,6 +693,7 @@ class MultiframeList(ttk.Frame):
 		for i in to_purge:
 			if self.curcellx is not None and self.curcellx >= i:
 				self._set_curcellx(i - 1)
+			self.framecontainer.grid_columnconfigure(i, weight = 0)
 			self.frames[i][0].destroy()
 			self.frames.pop(i)
 
@@ -886,6 +916,8 @@ class MultiframeList(ttk.Frame):
 		"""
 		for frame in self.frames:
 			frame[1].configure(height = self.cnf.listboxheight)
+		if self.frames:
+			self._listboxheight_hack.configure(height = self.frames[0][1].winfo_reqheight())
 
 	def _cnf_rightclickbtn(self, old):
 		"""
@@ -910,6 +942,7 @@ class MultiframeList(ttk.Frame):
 		from a frame or initial setup.
 		"""
 		tgt_frame = self.frames[frame_idx]
+		tgt_frame[0].configure(width = -1)
 		tgt_frame[1].delete(0, tk.END)
 		tgt_frame[1].insert(0, *(BLANK for _ in range(self.length)))
 		tgt_frame[1].configure(width = _DEF_LISTBOX_WIDTH)
@@ -920,11 +953,33 @@ class MultiframeList(ttk.Frame):
 		tgt_frame[2].bind("<ButtonRelease-1>",
 			lambda e: self._on_empty_frame_release(e, frame_idx)
 		)
+		tgt_frame[2].bind("<Leave>",
+			lambda e: self._on_empty_frame_leave(e, frame_idx)
+		)
 		tgt_frame[2].bind("<Motion>",
 			lambda e: self._on_empty_frame_motion(e, frame_idx)
 		)
 		tgt_frame[3].configure(text = BLANK)
-		self.framecontainer.grid_columnconfigure(frame_idx, weight = 1, minsize = 0)
+		self.framecontainer.grid_columnconfigure(frame_idx, weight = WEIGHT, minsize = 0)
+
+	def _get_clamps(self, dragged_frame):
+		c_frame = self.frames[dragged_frame]
+		p_frame = self.frames[dragged_frame - 1]
+		return (
+			p_frame[0].winfo_x() +
+				self.framecontainer.grid_columnconfigure(dragged_frame - 1)["minsize"],
+			c_frame[0].winfo_width() + c_frame[0].winfo_x() -
+				self.framecontainer.grid_columnconfigure(dragged_frame)["minsize"]
+		)
+
+	def _get_clamped_resize_pos(self, dragged_frame, event):
+		"""
+		Return the position a resize operation started on the label of frame
+		`dragged_frame` should be at, relative to the MultiframeList's position.
+		"""
+		cmin, cmax = self._get_clamps(dragged_frame)
+		abs_pos = event.widget.winfo_rootx() + event.x - self.framecontainer.winfo_rootx()
+		return max(cmin, min(abs_pos, cmax))
 
 	def _get_col_by_id(self, col_id):
 		"""
@@ -935,6 +990,15 @@ class MultiframeList(ttk.Frame):
 		if col is None:
 			raise ValueError(f"No column with column id {col_id!r}!")
 		return col
+
+	def _get_col_by_frame(self, frame):
+		"""
+		Returns the column in `frame` or None if there is none in it.
+		"""
+		for col in self.columns.values():
+			if col.assignedframe == frame:
+				return col
+		return None
 
 	def _get_frame_at_x(self, x):
 		"""
@@ -1020,37 +1084,64 @@ class MultiframeList(ttk.Frame):
 			i[1].see(self.curcelly)
 		self.event_generate("<<MultiframeSelect>>", when = "tail")
 
-	def _on_column_release(self, event, released_frame):
-		self.reorder_highlight.place_forget()
-		tgt_frame = self._get_frame_at_x(event.widget.winfo_rootx() + event.x)
-		self._swap_by_frame(tgt_frame, released_frame)
+	def _on_column_release(self, event, released_frame, drag_intent):
+		if drag_intent == DRAGINTENT.REORDER:
+			self.reorder_highlight.place_forget()
+			self._swap_by_frame(
+				self._get_frame_at_x(event.widget.winfo_rootx() + event.x),
+				released_frame
+			)
+		elif drag_intent == DRAGINTENT.RESIZE:
+			self.resize_highlight.place_forget()
+			total_weight = (
+				self.framecontainer.grid_columnconfigure(released_frame)["weight"] +
+				self.framecontainer.grid_columnconfigure(released_frame - 1)["weight"]
+			)
+			minclamp, maxclamp = self._get_clamps(released_frame)
+			maxclamp += (1 if maxclamp == minclamp else 0) # Paranoia to prevent zero div
+			pos = (self._get_clamped_resize_pos(released_frame, event) - minclamp)
+			# Subtracting minclamp from maxclamp will effectively get the area pos moves in
+			first_weight = round((pos / (maxclamp - minclamp)) * total_weight)
+			scnd_weight = total_weight - first_weight
+			self.framecontainer.grid_columnconfigure(released_frame, weight = scnd_weight)
+			self.framecontainer.grid_columnconfigure(released_frame - 1, weight = first_weight)
 
-	def _on_column_drag(self, event, dragged_frame):
-		highlight_idx = self._get_frame_at_x(event.widget.winfo_rootx() + event.x)
-		self.reorder_highlight.place(
-			x = self.frames[highlight_idx][0].winfo_x(),
-			y = self.frames[highlight_idx][1].winfo_y(),
-			width = 3, height = self.frames[highlight_idx][1].winfo_height()
-		)
-		self.reorder_highlight.tkraise()
+	def _on_column_drag(self, event, dragged_frame, drag_intent):
+		if drag_intent == DRAGINTENT.REORDER:
+			highlight_idx = self._get_frame_at_x(event.widget.winfo_rootx() + event.x)
+			self.reorder_highlight.place(
+				x = self.frames[highlight_idx][0].winfo_x(),
+				y = self.frames[highlight_idx][1].winfo_y(),
+				width = 3, height = self.frames[highlight_idx][1].winfo_height()
+			)
+			self.reorder_highlight.tkraise()
+		elif drag_intent == DRAGINTENT.RESIZE:
+			self.resize_highlight.place(
+				x = self._get_clamped_resize_pos(dragged_frame, event),
+				y = self.frames[0][1].winfo_y(),
+				width = 3, height = self.frames[0][1].winfo_height()
+			)
+			self.resize_highlight.tkraise()
+
+	def _on_empty_frame_leave(self, evt, _):
+		evt.widget.configure(cursor = "arrow")
 
 	def _on_empty_frame_motion(self, evt, fidx):
-		self.frames[fidx][2].configure(cursor="sb_h_double_arrow")
 		if self.pressed_frame is not None:
-			if self.dragging:
-				self._on_column_drag(evt, fidx)
+			if self.dragging is not None:
+				self._on_column_drag(evt, fidx, self.dragging)
 			elif not self.dragging and abs(evt.x - self.pressed_x) > DRAG_THRES:
-				self.dragging = True
+				self.dragging = _drag_intent(evt.x, self.pressed_frame)
 
 	def _on_empty_frame_press(self, evt, fidx):
 		self.pressed_frame = fidx
 		self.pressed_x = evt.x
 
 	def _on_empty_frame_release(self, evt, fidx):
-		if self.dragging:
-			self._on_column_release(evt, fidx)
+		if self.dragging is not None:
+			self._on_column_release(evt, fidx, self.dragging)
 		self.pressed_frame = self.pressed_x = None
-		self.dragging = False
+		self.dragging = None
 
 	def _swap_by_frame(self, tgt_frame, src_frame):
 		"""

@@ -23,7 +23,7 @@ class Demo:
 			{"name": "Sortercol", "col_id": "sorter"},
 			{"name": "Pricecol", "sort": True, "col_id": "sickocol"},
 			{"name": "-100", "col_id": "sub_col", "formatter": lambda n: n-100},
-			{"name": "Wide col", "w_width": 30},
+			{"name": "Wide col", "w_width": 30, "minsize": 200},
 			{"name": "unconf name", "col_id": "cnfcl"},
 		))
 		self.mfl.configcolumn("sickocol", formatter = priceconv)
@@ -56,7 +56,8 @@ class Demo:
 			tk.Button(self.root, text="lbstyle",  command=lambda: self.root.tk.eval((
 					"ttk::style configure MultiframeList.Listbox -background #{0}{0}{0} -foreground #0000{1:0>2}\n"
 					"ttk::style configure XActive.MultiframeList.Listbox -selectbackground #0000{0}\n"
-					"ttk::style configure MultiframeListReorderInd.TFrame -background #00{0}00"
+					"ttk::style configure MultiframeListReorderInd.TFrame -background #{0}0000\n"
+					"ttk::style configure MultiframeListResizeInd.TFrame -background #0000{0}\n"
 				).format(hex(randint(120, 255))[2:], hex(randint(0, 255))[2:])
 			)),
 			tk.Button(self.root, text="conf",     command=lambda: self.mfl.config(listboxheight=randint(5, 10))),
@@ -66,8 +67,7 @@ class Demo:
 			btn.pack(fill = tk.X, side = tk.LEFT)
 
 	def adddata(self):
-		self.mfl.insertrow({col_id: randint(0, 100)
-			for col_id in self.mfl.getcolumns()})
+		self.mfl.insertrow({col_id: randint(0, 100) for col_id in self.mfl.getcolumns()})
 		self.mfl.format()
 
 	def add1col(self):
@@ -140,9 +140,9 @@ class Demo:
 
 	def swaprand(self):
 		l = self.mfl.getcolumns().keys()
-		s_res = sample(l, 2)
-		print("Swapping {}".format(" with ".join([str(i) for i in s_res])))
-		self.swap(*s_res)
+		a, b = sample(l, 2)
+		print(f"Swapping {a} with {b}")
+		self.swap(a, b)
 
 def run_demo():
 	demo = Demo()
