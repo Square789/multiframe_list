@@ -10,13 +10,12 @@ import tkinter as tk
 import tkinter.ttk as ttk
 from operator import itemgetter
 
-__version__ = "2.4.0"
+__version__ = "3.0.0"
 __author__ = "Square789"
 
 BLANK = ""
-
 _DEF_LISTBOX_WIDTH = 20
-DRAG_THRES = 15
+DRAG_THRES = 10
 MIN_WIDTH = 30
 WEIGHT = 1000
 
@@ -32,10 +31,10 @@ def _drag_intent(x, frame):
 		return DRAGINTENT.RESIZE
 	return DRAGINTENT.REORDER
 
-SORTSYM = ("\u25B2", "\u25BC", "\u25A0") #desc, asc, none
+SORTSYM = ("\u25B2", "\u25BC", "\u25A0") # desc, asc, none
 
-SCROLLCOMMAND = \
-"""if {{[tk windowingsystem] eq "aqua"}} {{
+SCROLLCOMMAND = """
+if {{[tk windowingsystem] eq "aqua"}} {{
 	bind {w} <MouseWheel> {{
 		%W yview scroll [expr {{- (%D)}}] units
 	}}
@@ -78,17 +77,16 @@ if {{"x11" eq [tk windowingsystem]}} {{
 		%W xview scroll 5 units
 	}}
 	}}
-}}"""
+}}
+"""
 
 class _Column():
 	"""
 	Class whose purpose is to store data and information regarding a
 	column. Can be assigned to frames of a MultiframeList, displaying
 	its data in there.
-	##################################################################
-	!!! Columns should not be instantiated or controlled directly, !!!
-	!!! only through methods of a MultiframeList.				   !!!
-	##################################################################
+	!!! Columns should not be instantiated or controlled directly,
+	only through methods of a MultiframeList !!!
 	Required args:
 
 	mfl: Parent, must be a MultiframeList
@@ -102,16 +100,11 @@ class _Column():
 	names: Name to appear in the label and title the column.
 	sort: Whether the column should sort the entire MultiframeList when its
 		label is clicked.
-	w_width: The width the widgets in this Column's occupied frame
-		should have, measured in text units.
-		The tkinter default for the label is 0, for the listbox 20, it is
-		possible that the listbox stretches further than it should.
-		! NOT TO BE CONFUSED WITH minsize !
-	minsize: Specify the minimum amount of pixels the column should occupy.
-		This option gets passed to the grid geometry manager. It will be 60 px
-		at minimum.
-		! NOT TO BE CONFUSED WITH w_width !
-	weight: Weight parameter according to the grid geometry manager.
+	minsize: Specify the minimum amount of pixels the column should be wide.
+		This option gets passed to the grid geometry manager and will at least
+		be `MIN_WIDTH`.
+	weight: Weight parameter, passed to the grid geometry manager. Note that
+		it should be in proportion with `WEIGHT`, as default weights are very large.
 	formatter: A function that formats each element in a column's datalist.
 		This is especially useful for i. e. dates, where you want
 		to be able to sort by a unix timestamp but still be able to have the
@@ -119,6 +112,8 @@ class _Column():
 	fallback_type: A datatype that all elements of the column will be converted
 		to in case it has to be sorted. If not specified and elements are of
 		different types, an exception will be raised.
+	dblclick_cmd: A command that will be run when the column is double-clicked.
+		Will be called with an event as only parameter.
 	"""
 	# COLUMNS ARE RESPONSIBLE FOR UI UPDATING. GENERAL FLOW LIKE THIS:
 	# USER INTERFACES WITH THE MFL, MFL KEEPS TRACK OF A FEW LISTS AND
@@ -127,39 +122,34 @@ class _Column():
 
 	class Config():
 		__slots__ = (
-			"name", "sort", "minsize", "weight", "w_width", "formatter", "fallback_type",
+			"name", "sort", "minsize", "weight", "formatter", "fallback_type",
+			"dblclick_cmd",
 		)
 		def __init__(
 			self,
-			name = "<NO_NAME>",
-			sort = False,
-			minsize = 0,
-			weight = 1,
-			w_width = _DEF_LISTBOX_WIDTH,
-			formatter = None,
-			fallback_type = None,
+			name = "<NO_NAME>", sort = False, minsize = MIN_WIDTH,
+			weight = WEIGHT, formatter = None, fallback_type = None,
+			dblclick_cmd = None,
 		):
 			self.name = name
 			self.sort = sort
 			self.minsize = minsize
 			self.weight = weight
-			self.w_width = w_width
 			self.formatter = formatter
 			self.fallback_type = fallback_type
+			self.dblclick_cmd = dblclick_cmd
 
 	def __init__(self, mfl, col_id=None, **kwargs):
 		if not isinstance(mfl, MultiframeList):
 			raise TypeError("Bad Column parent, must be MultiframeList.")
 		self.mfl = mfl
 		self.assignedframe = None
-		self.dragged = False
-		self.pressed = None
 
 		self._cnfcmd = {
 			"name": self._cnf_name, "sort": self._cnf_sort,
-			"minsize": self._cnf_minsize, "weight": lambda: False,
-			"formatter": self._cnf_formatter, "w_width": self._cnf_w_width,
-			"fallback_type": lambda: False,
+			"minsize": self._cnf_grid, "weight": self._cnf_grid,
+			"formatter": self.format, "fallback_type": lambda: False,
+			"dblclick_cmd": self._cnf_dblclick_cmd,
 		}
 
 		if col_id is None:
@@ -189,26 +179,29 @@ class _Column():
 			curid += 1
 		return curid
 
-	def _cnf_formatter(self): # NOTE: YES OR NO?
-		self.format()
-
-	# def _cnf_grid(self):
-	#	if self.assignedframe is None:
-	#		return
-	#	cur_grid = self.mfl.framecontainer.grid_columnconfigure(self.assignedframe)
-	#	callargs = {}
-	#	for value in ("minsize", ):
-	#		if cur_grid[value] != getattr(self.cnf, value):
-	#			callargs[value] = getattr(self.cnf, value)
-	#	if callargs:
-	#		self.mfl.framecontainer.grid_columnconfigure(self.assignedframe, **callargs)
-
-	def _cnf_minsize(self):
+	def _cnf_dblclick_cmd(self):
 		if self.assignedframe is None:
 			return
-		self.mfl.framecontainer.grid_columnconfigure(
-			self.assignedframe, minsize = max(self.cnf.minsize, MIN_WIDTH)
-		)
+		if self.cnf.dblclick_cmd is None:
+			self.mfl.frames[self.assignedframe][1].unbind("<Double-Button-1>")
+		else:
+			self.mfl.frames[self.assignedframe][1].bind(
+				"<Double-Button-1>", self.cnf.dblclick_cmd
+			)
+
+	def _cnf_grid(self):
+		# Hacky corrector
+		if self.cnf.minsize < MIN_WIDTH:
+			self.cnf.minsize = MIN_WIDTH
+		if self.assignedframe is None:
+			return
+		cur_grid = self.mfl.framecontainer.grid_columnconfigure(self.assignedframe)
+		callargs = {}
+		for value in ("minsize", "weight"):
+			if cur_grid[value] != getattr(self.cnf, value):
+				callargs[value] = getattr(self.cnf, value)
+		if callargs:
+			self.mfl.framecontainer.grid_columnconfigure(self.assignedframe, **callargs)
 
 	def _cnf_name(self):
 		if self.assignedframe is None:
@@ -222,36 +215,6 @@ class _Column():
 			self.set_sortstate(self.sortstate)
 		else:
 			self.mfl.frames[self.assignedframe][3].configure(text = BLANK)
-
-	def _cnf_w_width(self):
-		if self.assignedframe is None:
-			return
-		self.mfl.frames[self.assignedframe][1].configure(width = self.cnf.w_width)
-
-	def _label_on_buttonpress(self, evt):
-		self.pressed = evt.x
-
-	def _label_on_leave(self, evt):
-		evt.widget.configure(cursor = "arrow")
-
-	def _label_on_motion(self, evt):
-		if self.pressed is not None:
-			if self.dragged:
-				self.mfl._on_column_drag(evt, self.assignedframe, self.dragged)
-			elif not self.dragged and abs(evt.x - self.pressed) > DRAG_THRES:
-				self.dragged = _drag_intent(self.pressed, self.assignedframe)
-		else:
-			cur = "sb_h_double_arrow" if \
-				_drag_intent(evt.x, self.assignedframe) == DRAGINTENT.RESIZE else "arrow"
-			evt.widget.configure(cursor = cur)
-
-	def _label_on_release(self, evt):
-		if not self.dragged and self.cnf.sort:
-			self.mfl.sort(None, self)
-		elif self.dragged:
-			self.mfl._on_column_release(evt, self.assignedframe, self.dragged)
-		self.dragged = False
-		self.pressed = None
 
 	def config(self, **kw):
 		if not kw:
@@ -343,10 +306,18 @@ class _Column():
 			return
 
 		self.assignedframe = wanted_frame
-		self.mfl.frames[self.assignedframe][2].bind("<ButtonPress-1>", self._label_on_buttonpress)
-		self.mfl.frames[self.assignedframe][2].bind("<Leave>", self._label_on_leave)
-		self.mfl.frames[self.assignedframe][2].bind("<Motion>", self._label_on_motion)
-		self.mfl.frames[self.assignedframe][2].bind("<ButtonRelease-1>", self._label_on_release)
+		self.mfl.frames[self.assignedframe][2].bind("<ButtonPress-1>",
+			lambda evt: self.mfl._on_frame_header_press(evt, self.assignedframe)
+		)
+		self.mfl.frames[self.assignedframe][2].bind("<Leave>",
+			self.mfl._on_frame_header_leave
+		)
+		self.mfl.frames[self.assignedframe][2].bind("<Motion>",
+			lambda evt: self.mfl._on_frame_header_motion(evt, self.assignedframe)
+		)
+		self.mfl.frames[self.assignedframe][2].bind("<ButtonRelease-1>",
+			lambda evt: self.mfl._on_frame_header_release(evt, self.assignedframe)
+		)
 		self.set_sortstate(self.sortstate)
 		# NOTE: I don't think these two recurring lines warrant their own
 		# "setframetodata" method.
@@ -372,12 +343,14 @@ class MultiframeList(ttk.Frame):
 
 	A terrible idea of a feature:
 		The MultiframeList will grab the currently active theme (as well as
-		listen to the <<ThemeChanged>> event) and attempt to apply style
-		configuration options in the current theme's style called
-		"MultiframeList.Listbox" to its listboxes, as those are not available
-		as ttk variants.
+			listen to the <<ThemeChanged>> event) and attempt to apply style
+			configuration options in the current theme's style called
+			"MultiframeList.Listbox" to its listboxes, as those are not
+			available as ttk variants.
 		The column title labels listen to the style "MultiframeListTitle.TLabel"
 		The column sort indicators listen to the style "MultiframeLisSortInd.Tlabel"
+		The reorder/resizing indicators listen to the styles
+			"MultiframeListResizeInd.TFrame" and "MultiframeListReorderInd.TFrame".
 	The list broadcasts the Virtual event "<<MultiframeSelect>>" to its parent
 		whenever something is selected.
 	The list broadcasts the Virtual event "<<MultiframeRightclick>>" to its
@@ -403,14 +376,15 @@ class MultiframeList(ttk.Frame):
 	}
 
 	class Config():
-		__slots__ = ("listboxheight", "rightclickbtn", "reorderable")
+		__slots__ = ("listboxheight", "rightclickbtn", "reorderable", "resizable")
 		def __init__(
 			self, listboxheight = 10, rightclickbtn = "3",
-			reorderable = False
+			reorderable = False, resizable = False
 		):
 			self.listboxheight = listboxheight
 			self.rightclickbtn = rightclickbtn
 			self.reorderable = reorderable
+			self.resizable = resizable
 
 	def __init__(self, master, inicolumns = None, **kwargs):
 		"""
@@ -434,8 +408,11 @@ class MultiframeList(ttk.Frame):
 			10 by tkinter default.
 
 		reorderable <Bool>: Whether the columns of the MultiframeList should be
-			reorderable by the user dragging and dropping the column headers.
+			reorderable by the user dragging and dropping the column headers
+			as well as Ctrl-Left/Ctrl-Right. False by default.
 
+		resizable <Bool>: Whether the columns of the MultiframeList should be
+			resizable by the user dragging the column headers. False by default.
 		"""
 		super().__init__(master, takefocus = True)
 
@@ -448,8 +425,6 @@ class MultiframeList(ttk.Frame):
 		self.bind("<Right>", lambda _: self._on_arr_x(1, False))
 		self.bind("<Control-Left>", lambda _: self._on_arr_x(-1, True))
 		self.bind("<Control-Right>", lambda _: self._on_arr_x(1, True))
-		self.bind("d", lambda _: print(self.curcellx, self.curcelly))
-		self.bind("D", lambda _: print(self.curcellx, self.curcelly))
 		if os.name == "nt":
 			ctxtmen_btn = "App"
 		elif os.name == "posix":
@@ -458,10 +433,10 @@ class MultiframeList(ttk.Frame):
 			ctxtmen_btn = None
 
 		if ctxtmen_btn is not None:
-			self.bind(f"<KeyPress-{ctxtmen_btn}>", self.__callback_menu_button)
+			self.bind(f"<KeyPress-{ctxtmen_btn}>", self._on_menu_button)
 
 		self.ttkhookstyle = ttk.Style()
-		self.bind("<<ThemeChanged>>", self.__themeupdate)
+		self.bind("<<ThemeChanged>>", self._theme_update)
 
 		self.curcellx = None
 		self.curcelly = None
@@ -470,9 +445,9 @@ class MultiframeList(ttk.Frame):
 
 		self.pressed_frame = None
 		self.pressed_x = None
-		self.dragging = False
+		self.dragging = None
 
-		self.scrollbar = ttk.Scrollbar(self, command = self.__scrollallbar)
+		self.scrollbar = ttk.Scrollbar(self, command = self._scrollallbar)
 		self.framecontainer = ttk.Frame(self)
 		self.framecontainer.grid_rowconfigure(0, weight = 1)
 		self._listboxheight_hack = ttk.Frame(self, width = 0)
@@ -490,8 +465,8 @@ class MultiframeList(ttk.Frame):
 		self.length = 0
 
 		if inicolumns is not None:
-			self.addframes(len(inicolumns))
-			# using self.addcolumns would require iterating a dict relying
+			self.add_frames(len(inicolumns))
+			# using self.add_columns would require iterating a dict relying
 			# on the fact it's sorted, i don't like that so we copypaste 2 lines
 			for index, colopt in enumerate(inicolumns):
 				new_col = _Column(self, **colopt)
@@ -504,7 +479,7 @@ class MultiframeList(ttk.Frame):
 
 	#====USER METHODS====
 
-	def addcolumns(self, *coldicts):
+	def add_columns(self, *coldicts):
 		"""
 		Takes any amount of dicts, then adds columns where the column
 		constructor receives the dicts as kwargs. See the
@@ -515,7 +490,7 @@ class MultiframeList(ttk.Frame):
 			# Columns will give themselves a proper id
 			self.columns[new_col.col_id] = new_col
 
-	def addframes(self, amount):
+	def add_frames(self, amount):
 		"""
 		Adds amount of frames, display slots in a way, fills their listboxes
 		up with empty strings and immediatedly displays them.
@@ -548,15 +523,15 @@ class MultiframeList(ttk.Frame):
 			# REMOVE Listbox bindings from listboxes
 			new_frame[1].bindtags((new_frame[1].bindtags()[0], '.', 'all'))
 			def _handler_m1(event, self = self, button = 1, frameindex = curindex):
-				return self.__setindex_lb(event, button, frameindex)
+				return self._on_listbox_buttonpress(event, button, frameindex)
 			def _handler_m3(event, self = self, button = rcb, frameindex = curindex):
-				return self.__setindex_lb(event, button, frameindex)
+				return self._on_listbox_buttonpress(event, button, frameindex)
 			new_frame[1].bind(f"<Button-{rcb}>", _handler_m3)
 			new_frame[1].bind("<Button-1>", _handler_m1)
 			self.tk.eval(SCROLLCOMMAND.format(w = new_frame[1]._w))
 			new_frame[1].configure(
 				**self._get_listbox_conf(new_frame[1]),
-				yscrollcommand = self.__scrollalllistbox
+				yscrollcommand = self._scrollalllistbox
 			)
 			self._clear_frame(curindex)
 
@@ -565,12 +540,16 @@ class MultiframeList(ttk.Frame):
 			new_frame[1].grid(row = 1, column = 0, sticky = "news", columnspan = 2) # listbox
 			new_frame[0].grid(row = 0, column = curindex, sticky = "news") # frame
 			new_frame[0].grid_propagate(False)
+			# For some reason necessary so the grid manager reacts to the new frame,
+			# in conjunction with the <Configure> event below
+			self.framecontainer.update()
 
 			self._listboxheight_hack.configure(height = new_frame[1].winfo_reqheight())
 
+		self.framecontainer.event_generate("<Configure>")
 		self._y_selection_redraw()
 
-	def assigncolumn(self, col_id, req_frame):
+	def assign_column(self, col_id, req_frame):
 		"""
 		Sets display of a column given by its column id to req_frame.
 		The same frame may not be occupied by multiple columns and must
@@ -594,15 +573,15 @@ class MultiframeList(ttk.Frame):
 		self.length = 0
 		self._set_curcellx(None)
 		self.curcelly = None
-		self.__lengthmod_callback()
+		self._lengthmod_callback()
 
 	def config(self, **kwargs):
 		"""
 		Change configuration options of the MultiframeList/underlying frame.
-		List of MultiframeList options, all others will be routed to the frame:
+		All non-MultiframeList options will be routed to the frame:
 
-		-listboxheight: Height of the listboxes in displayed rows. Change this
-			if the tkinter default of 10 doesn't work out for you.
+		For configurable options, see the `Modifiable during runtime` section
+		in the `__init__` docstring.
 		"""
 		for mfl_arg in self.Config.__slots__:
 			if mfl_arg in kwargs:
@@ -614,7 +593,7 @@ class MultiframeList(ttk.Frame):
 					pass
 		super().configure(**kwargs)
 
-	def configcolumn(self, col_id, **cnf):
+	def config_column(self, col_id, **cnf):
 		"""
 		Update the configuration of the column referenced by col_id
 		with the values specified in cnf as kwargs.
@@ -645,14 +624,14 @@ class MultiframeList(ttk.Frame):
 				self._get_col_by_id(col_id).format(exclusively = indices)
 		self._y_selection_redraw()
 
-	def getcolumns(self):
+	def get_columns(self):
 		"""
 		Returns a dict where key is a column id and value is the column's
 		current display slot (frame). Value is None if the column is hidden.
 		"""
 		return {c.col_id: c.assignedframe for c in self.columns.values()}
 
-	def getselectedcell(self):
+	def get_selected_cell(self):
 		"""
 		Returns the coordinates of the currently selected cell as a tuple
 		of length 2; (0, 0) starting in the top left corner;
@@ -660,7 +639,7 @@ class MultiframeList(ttk.Frame):
 		"""
 		return (self.curcellx, self.curcelly)
 
-	def getlastclick(self):
+	def get_last_click(self):
 		"""
 		Returns the absolute screen coordinates the last user interaction
 		was made at as a tuple. May consist of int or None.
@@ -668,20 +647,20 @@ class MultiframeList(ttk.Frame):
 		"""
 		return (self.coordx, self.coordy)
 
-	def getlen(self):
+	def get_length(self):
 		"""Returns length of the MultiframeList."""
 		return self.length
 
-	def removecolumn(self, col_id):
+	def remove_column(self, col_id):
 		"""
 		Deletes the column addressed by col_id, safely unregistering all
 		related elements.
 		"""
 		col = self._get_col_by_id(col_id)
-		self.assigncolumn(col_id, None)
+		self.assign_column(col_id, None)
 		self.columns.pop(col_id)
 
-	def removeframes(self, amount):
+	def remove_frames(self, amount):
 		"""
 		Safely remove the specified amount of frames from the
 		MultiframeList, unregistering all related elements.
@@ -693,11 +672,16 @@ class MultiframeList(ttk.Frame):
 		for i in to_purge:
 			if self.curcellx is not None and self.curcellx >= i:
 				self._set_curcellx(i - 1)
-			self.framecontainer.grid_columnconfigure(i, weight = 0)
+			self.framecontainer.grid_columnconfigure(i, weight = 0, minsize = 0)
+			# update in conjunction with the <Configure> event is for some
+			# reason necessary so the grid manager actually releases
+			# the space occupied by the deleted frames and redistributes it.
 			self.frames[i][0].destroy()
+			self.framecontainer.update()
 			self.frames.pop(i)
+		self.framecontainer.event_generate("<Configure>")
 
-	def setselectedcell(self, x, y):
+	def set_selected_cell(self, x, y):
 		"""
 		Sets the selected cell to the specified x and y coordinates.
 		You may also pass None to any of those.
@@ -722,7 +706,7 @@ class MultiframeList(ttk.Frame):
 
 	#==DATA MODIFICATION, ALL==
 
-	def insertrow(self, data, insindex = None, reset_sortstate = True):
+	def insert_row(self, data, insindex = None, reset_sortstate = True):
 		"""
 		Inserts a row of data into the MultiframeList.
 
@@ -742,9 +726,9 @@ class MultiframeList(ttk.Frame):
 			else:
 				col.data_insert(BLANK, insindex)
 		self.length += 1
-		self.__lengthmod_callback()
+		self._lengthmod_callback()
 
-	def removerow(self, index):
+	def remove_row(self, index):
 		"""
 		Deletes the entire row at index.
 		"""
@@ -753,9 +737,9 @@ class MultiframeList(ttk.Frame):
 		for col in self.columns.values():
 			col.data_pop(index)
 		self.length -= 1
-		self.__lengthmod_callback()
+		self._lengthmod_callback()
 
-	def setdata(self, data, reset_sortstate = True):
+	def set_data(self, data, reset_sortstate = True):
 		"""
 		Sets the data of the MultiframeList, clearing everything beforehand.
 
@@ -779,11 +763,11 @@ class MultiframeList(ttk.Frame):
 			else:
 				col.data_set([BLANK for _ in range(ln)])
 		self.length = ln
-		self.__lengthmod_callback()
+		self._lengthmod_callback()
 		self._set_curcellx(None)
 		self.curcelly = None
 
-	def setcell(self, col_to_mod, y, data, reset_sortstate = True):
+	def set_cell(self, col_to_mod, y, data, reset_sortstate = True):
 		"""
 		Sets the cell in col_to_mod at y to data.
 		Formatter is applied automatically, if present.
@@ -798,7 +782,7 @@ class MultiframeList(ttk.Frame):
 		col.data_pop(y)
 		col.data_insert(data, y)
 
-	def setcolumn(self, col_to_mod, data, reset_sortstate = True):
+	def set_column(self, col_to_mod, data, reset_sortstate = True):
 		"""
 		Sets column specified by col_to_mod to data.
 		Raises an exception if length differs from the rest of the columns.
@@ -812,7 +796,7 @@ class MultiframeList(ttk.Frame):
 		if len(self.columns) == 1:
 			targetcol.data_set(data)
 			self.length = datalen
-			self.__lengthmod_callback()
+			self._lengthmod_callback()
 		else:
 			for col in self.columns.values():
 				if len(col.data) != datalen:
@@ -824,7 +808,7 @@ class MultiframeList(ttk.Frame):
 
 	#==DATA RETRIEVAL, DICT, ALL==
 
-	def getrows(self, start, end = None):
+	def get_rows(self, start, end = None):
 		"""
 		Retrieve rows between a start and an optional end parameter.
 
@@ -858,12 +842,12 @@ class MultiframeList(ttk.Frame):
 		# Performance location: out the window, on the sidewalk
 		return r_data, col_id_map
 
-	def getcolumn(self, col_id):
+	def get_column(self, col_id):
 		"""Returns the data of the colum with col_id as a list."""
 		col = self._get_col_by_id(col_id)
 		return col.data
 
-	def getcell(self, col_id, y):
+	def get_cell(self, col_id, y):
 		"""Returns element y of the column specified by col_id."""
 		col = self._get_col_by_id(col_id)
 		return col.data[y]
@@ -888,7 +872,7 @@ class MultiframeList(ttk.Frame):
 		for col in self.columns.values(): # reset sortstate of other columns
 			if col.col_id != caller_id:
 				col.set_sortstate(2)
-		tmpdat, colidmap = self.getrows(ALL)
+		tmpdat, colidmap = self.get_rows(ALL)
 		datacol_index = colidmap[caller_id]
 		try:
 			tmpdat = sorted(tmpdat, key = itemgetter(datacol_index), reverse = rev)
@@ -903,7 +887,7 @@ class MultiframeList(ttk.Frame):
 		for col_id in colidmap:
 			datacol_i = colidmap[col_id]
 			newdat[col_id] = [i[datacol_i] for i in tmpdat]
-		self.setdata(newdat, reset_sortstate = False)
+		self.set_data(newdat, reset_sortstate = False)
 		self.format()
 		self._scroll_restore(scroll)
 
@@ -928,7 +912,7 @@ class MultiframeList(ttk.Frame):
 			def _right_click_handler(
 				event, self = self, button = self.cnf.rightclickbtn, frameidx = idx
 			):
-				return self.__setindex_lb(event, button, frameidx)
+				return self._on_listbox_buttonpress(event, button, frameidx)
 			frame[1].unbind(f"<Button-{old}>")
 			frame[1].bind(f"<Button-{self.cnf.rightclickbtn}>", _right_click_handler)
 
@@ -942,25 +926,25 @@ class MultiframeList(ttk.Frame):
 		from a frame or initial setup.
 		"""
 		tgt_frame = self.frames[frame_idx]
-		tgt_frame[0].configure(width = -1)
 		tgt_frame[1].delete(0, tk.END)
 		tgt_frame[1].insert(0, *(BLANK for _ in range(self.length)))
 		tgt_frame[1].configure(width = _DEF_LISTBOX_WIDTH)
+		tgt_frame[1].unbind("<Double-Button-1>")
 		tgt_frame[2].configure(text = BLANK)
 		tgt_frame[2].bind("<Button-1>",
-			lambda e: self._on_empty_frame_press(e, frame_idx)
+			lambda e: self._on_frame_header_press(e, frame_idx)
 		)
 		tgt_frame[2].bind("<ButtonRelease-1>",
-			lambda e: self._on_empty_frame_release(e, frame_idx)
+			lambda e: self._on_frame_header_release(e, frame_idx)
 		)
-		tgt_frame[2].bind("<Leave>",
-			lambda e: self._on_empty_frame_leave(e, frame_idx)
-		)
+		tgt_frame[2].bind("<Leave>", self._on_frame_header_leave)
 		tgt_frame[2].bind("<Motion>",
-			lambda e: self._on_empty_frame_motion(e, frame_idx)
+			lambda e: self._on_frame_header_motion(e, frame_idx)
 		)
 		tgt_frame[3].configure(text = BLANK)
-		self.framecontainer.grid_columnconfigure(frame_idx, weight = WEIGHT, minsize = 0)
+		self.framecontainer.grid_columnconfigure(frame_idx,
+			weight = WEIGHT, minsize = MIN_WIDTH
+		)
 
 	def _get_clamps(self, dragged_frame):
 		c_frame = self.frames[dragged_frame]
@@ -992,13 +976,17 @@ class MultiframeList(ttk.Frame):
 		return col
 
 	def _get_col_by_frame(self, frame):
-		"""
-		Returns the column in `frame` or None if there is none in it.
-		"""
+		"""Returns the column in `frame` or None if there is none in it."""
 		for col in self.columns.values():
 			if col.assignedframe == frame:
 				return col
 		return None
+
+	def _get_empty_frames(self):
+		"""Returns the indexes of all frames that are not assigned a column."""
+		existingframes = range(len(self.frames))
+		assignedframes = [col.assignedframe for col in self.columns.values()]
+		return [f for f in existingframes if not f in assignedframes]
 
 	def _get_frame_at_x(self, x):
 		"""
@@ -1048,6 +1036,29 @@ class MultiframeList(ttk.Frame):
 		e_height = self._get_listbox_entry_height(lb)
 		return ((y_pos - borderwidth) // e_height) + offset
 
+	def _lengthmod_callback(self):
+		"""
+		Should be called after the MultiframeList's length was
+		modified. This method updates frames without a column so the amount
+		of blank strings in them stays correct and modifies the current
+		selection index in case it is out of bounds.
+		"""
+		for fi in self._get_empty_frames():
+			curframelen = self.frames[fi][1].size()
+			if curframelen > self.length:
+				self.frames[fi][1].delete(self.length, tk.END)
+			elif curframelen < self.length:
+				self.frames[fi][1].insert(
+					tk.END, *(BLANK for _ in range(self.length - curframelen))
+				)
+		if self.curcelly is None:
+			return
+		if self.curcelly > self.length - 1:
+			self.curcelly = self.length - 1
+		if self.curcelly < 0:
+			self.curcelly = None
+		self._y_selection_redraw()
+
 	def _on_arr_x(self, direction, with_ctrl):
 		"""
 		Executed when the MultiframeList receives <Left> and <Right> events,
@@ -1085,29 +1096,40 @@ class MultiframeList(ttk.Frame):
 		self.event_generate("<<MultiframeSelect>>", when = "tail")
 
 	def _on_column_release(self, event, released_frame, drag_intent):
-		if drag_intent == DRAGINTENT.REORDER:
+		if drag_intent == DRAGINTENT.REORDER and self.cnf.reorderable:
 			self.reorder_highlight.place_forget()
 			self._swap_by_frame(
 				self._get_frame_at_x(event.widget.winfo_rootx() + event.x),
 				released_frame
 			)
-		elif drag_intent == DRAGINTENT.RESIZE:
+		elif drag_intent == DRAGINTENT.RESIZE and self.cnf.resizable:
+			# Shouldn't really happen, but you can never be too sure
+			if released_frame == 0:
+				return
 			self.resize_highlight.place_forget()
 			total_weight = (
 				self.framecontainer.grid_columnconfigure(released_frame)["weight"] +
 				self.framecontainer.grid_columnconfigure(released_frame - 1)["weight"]
 			)
 			minclamp, maxclamp = self._get_clamps(released_frame)
-			maxclamp += (1 if maxclamp == minclamp else 0) # Paranoia to prevent zero div
+			maxclamp += (1 if maxclamp == minclamp else 0) # Prevent zero div
 			pos = (self._get_clamped_resize_pos(released_frame, event) - minclamp)
 			# Subtracting minclamp from maxclamp will effectively get the area pos moves in
-			first_weight = round((pos / (maxclamp - minclamp)) * total_weight)
-			scnd_weight = total_weight - first_weight
-			self.framecontainer.grid_columnconfigure(released_frame, weight = scnd_weight)
-			self.framecontainer.grid_columnconfigure(released_frame - 1, weight = first_weight)
+			prv_weight = round((pos / (maxclamp - minclamp)) * total_weight)
+			rel_weight = total_weight - prv_weight
+			for fidx, weight in ((released_frame, rel_weight), (released_frame - 1, prv_weight)):
+				col = self._get_col_by_frame(fidx)
+				if col is None:
+					self.framecontainer.grid_columnconfigure(fidx, weight = weight)
+				else:
+					col.config(weight = weight)
+		elif not self.dragging:
+			rcol = self._get_col_by_frame(released_frame)
+			if rcol is not None and rcol.cnf.sort:
+				self.sort(None, rcol)
 
-	def _on_column_drag(self, event, dragged_frame, drag_intent):
-		if drag_intent == DRAGINTENT.REORDER:
+	def _on_column_drag(self, event, dragged_frame):
+		if self.dragging == DRAGINTENT.REORDER and self.cnf.reorderable:
 			highlight_idx = self._get_frame_at_x(event.widget.winfo_rootx() + event.x)
 			self.reorder_highlight.place(
 				x = self.frames[highlight_idx][0].winfo_x(),
@@ -1115,7 +1137,7 @@ class MultiframeList(ttk.Frame):
 				width = 3, height = self.frames[highlight_idx][1].winfo_height()
 			)
 			self.reorder_highlight.tkraise()
-		elif drag_intent == DRAGINTENT.RESIZE:
+		elif self.dragging == DRAGINTENT.RESIZE and self.cnf.resizable:
 			self.resize_highlight.place(
 				x = self._get_clamped_resize_pos(dragged_frame, event),
 				y = self.frames[0][1].winfo_y(),
@@ -1123,107 +1145,60 @@ class MultiframeList(ttk.Frame):
 			)
 			self.resize_highlight.tkraise()
 
-	def _on_empty_frame_leave(self, evt, _):
+	def _on_frame_header_leave(self, evt):
 		evt.widget.configure(cursor = "arrow")
 
-	def _on_empty_frame_motion(self, evt, fidx):
+	def _on_frame_header_motion(self, evt, fidx):
 		if self.pressed_frame is not None:
 			if self.dragging is not None:
-				self._on_column_drag(evt, fidx, self.dragging)
+				self._on_column_drag(evt, fidx)
 			elif not self.dragging and abs(evt.x - self.pressed_x) > DRAG_THRES:
-				self.dragging = _drag_intent(evt.x, self.pressed_frame)
+				self.dragging = _drag_intent(self.pressed_x, self.pressed_frame)
+		else:
+			evt.widget.configure(
+				cursor = "sb_h_double_arrow" if
+				_drag_intent(evt.x, fidx) == DRAGINTENT.RESIZE and self.cnf.resizable
+				else "arrow"
+			)
 
-	def _on_empty_frame_press(self, evt, fidx):
+	def _on_frame_header_press(self, evt, fidx):
+		"""
+		Callback to register the pressed frame and initial press position
+		while dragging.
+		"""
 		self.pressed_frame = fidx
 		self.pressed_x = evt.x
 
-	def _on_empty_frame_release(self, evt, fidx):
-		if self.dragging is not None:
-			self._on_column_release(evt, fidx, self.dragging)
+	def _on_frame_header_release(self, evt, fidx):
+		"""
+		Callback to reset press variables and invoke release handler after
+		dragging a column header.
+		"""
+		self._on_column_release(evt, fidx, self.dragging)
 		self.pressed_frame = self.pressed_x = None
 		self.dragging = None
 
-	def _swap_by_frame(self, tgt_frame, src_frame):
-		"""
-		Swaps the contents of two frames. Whether any, none or both of them
-		are blank is handled properly. 
-		"""
-		tgt_col = src_col = None
-		for tcol_id, col in self.columns.items():
-			if col.assignedframe == tgt_frame:
-				tgt_col = self.columns[tcol_id]
-			if col.assignedframe == src_frame:
-				src_col = self.columns[tcol_id]
-		if tgt_col is src_col: # They're the same or both None, no action required
+	def _on_listbox_buttonpress(self, event, button, frameindex):
+		"""Called by listboxes; GENERATES EVENT, sets the current index."""
+		# Relay focus back to mfl
+		self.focus()
+		if self.length == 0:
 			return
-		scroll = self._scroll_get()
-		if src_col is not None: src_col.setdisplay(None)
-		if tgt_col is not None: tgt_col.setdisplay(None)
-		if src_col is not None: src_col.setdisplay(tgt_frame)
-		if tgt_col is not None: tgt_col.setdisplay(src_frame)
-		self._scroll_restore(scroll)
+		tosel = self._get_index_from_mouse_y(self.frames[frameindex][1], event.y)
+		if tosel < 0:
+			return
+		if tosel >= self.length:
+			tosel = self.length - 1
+		self.curcelly = tosel
+		self._set_curcellx(frameindex)
 		self._y_selection_redraw()
+		self.coordx = self.frames[frameindex][0].winfo_rootx() + event.x
+		self.coordy = self.frames[frameindex][0].winfo_rooty() + 20 + event.y
+		self.event_generate("<<MultiframeSelect>>", when = "tail")
+		if button == self.cnf.rightclickbtn:
+			self.event_generate("<<MultiframeRightclick>>", when = "tail")
 
-	def _y_selection_redraw(self):
-		"""
-		Should be called after `self.curcelly` is modified.
-		Purely cosmetic effect, as actual selection access should only
-		occur via self.getselectedcell()
-		"""
-		sel = self.curcelly
-		if sel is None:
-			for i in self.frames:
-				i[1].selection_clear(0, tk.END)
-			return
-		for i in self.frames:
-			i[1].selection_clear(0, tk.END)
-			i[1].selection_set(sel)
-			i[1].activate(sel)
-
-	def _set_curcellx(self, new_x):
-		"""
-		Use this for any change to `self.curcellx`.
-		Will configure the `XActive` style appropiately.
-		NOTE maybe use a @property setter?
-		"""
-		old_x = self.curcellx
-		self.curcellx = new_x
-		if old_x is not None:
-			self.frames[old_x][1].configure(
-				**self._get_listbox_conf(self.frames[old_x][1])
-			)
-		if new_x is not None:
-			self.frames[new_x][1].configure(
-				**self._get_listbox_conf(self.frames[new_x][1], True)
-			)
-
-	def _scroll_get(self):
-		if not self.frames:
-			return None
-		return self.frames[0][1].yview()[0]
-
-	def _scroll_restore(self, scroll):
-		if scroll is not None:
-			self.__scrollalllistbox(scroll, 1.0)
-
-	def _reset_sortstate(self):
-		"""
-		Reset the sortstate of all columns to 2.
-		"""
-		for column in self.columns.values():
-			column.set_sortstate(2)
-
-	def __getdisplayedcolumns(self):
-		"""
-		Returns a list of references to the columns that are displaying
-		their data currently, sorted starting at 0.
-		"""
-		return sorted(
-			[c for c in self.columns.values() if c.assignedframe is not None],
-			key = lambda col: col.assignedframe
-		)
-
-	def __callback_menu_button(self, _):
+	def _on_menu_button(self, _):
 		"""
 		User has pressed the menu button.
 		This generates a <<MultiframeRightclick>> event and modifies
@@ -1246,75 +1221,65 @@ class MultiframeList(ttk.Frame):
 			20 + pseudo_lbl.winfo_rooty()
 		tmp_x = int(round(tmp_x))
 		tmp_y = int(round(tmp_y))
-		if tmp_y < 0:
-			tmp_y = 0
-		tmp_y += 10
+		tmp_y = max(tmp_y, 0) + 10
 		self.coordx = tmp_x
 		self.coordy = tmp_y
 		self.event_generate("<<MultiframeRightclick>>", when = "tail")
 
-	def __getemptyframes(self):
-		"""Returns the indexes of all frames that are not assigned a column."""
-		existingframes = range(len(self.frames))
-		assignedframes = [col.assignedframe for col in self.columns.values()]
-		return [f for f in existingframes if not f in assignedframes]
+	def _reset_sortstate(self):
+		"""
+		Reset the sortstate of all columns to 2.
+		"""
+		for column in self.columns.values():
+			column.set_sortstate(2)
 
-	def __relay_focus(self, *_):
+	def _swap_by_frame(self, tgt_frame, src_frame):
 		"""
-		Called by frames when they are clicked so focus is given to the
-		MultiframeList Frame itself.
+		Swaps the contents of two frames. Whether any, none or both of them
+		are blank is handled properly. Will copy over the weight from empty
+		frames as their `weight` is the only "configurable" option they have
+		stored in them. (Implicitly by the user resizing them)
 		"""
-		self.focus()
-
-	def __setindex_lb(self, event, button, frameindex):
-		"""Called by listboxes; GENERATES EVENT, sets the current index."""
-		self.__relay_focus()
-		if self.length == 0:
+		tgt_col = src_col = None
+		tgt_col = self._get_col_by_frame(tgt_frame)
+		src_col = self._get_col_by_frame(src_frame)
+		# They're the same, no action required
+		if tgt_col == src_col and tgt_col is not None:
 			return
-		tosel = self._get_index_from_mouse_y(self.frames[frameindex][1], event.y)
-		if tosel < 0:
-			return
-		if tosel >= self.length:
-			tosel = self.length - 1
-		self.curcelly = tosel
-		self._set_curcellx(frameindex)
-		self._y_selection_redraw()
-		self.coordx = self.frames[frameindex][0].winfo_rootx() + event.x
-		self.coordy = self.frames[frameindex][0].winfo_rooty() + 20 + event.y
-		self.event_generate("<<MultiframeSelect>>", when = "tail")
-		if button == self.cnf.rightclickbtn:
-			self.event_generate("<<MultiframeRightclick>>", when = "tail")
-
-	def __lengthmod_callback(self):
-		"""
-		Should be called after the MultiframeList's length was
-		modified. This method updates frames without a column so the amount
-		of blank strings in them stays correct and modifies the current
-		selection index in case it is out of bounds.
-		"""
-		for fi in self.__getemptyframes():
-			curframelen = self.frames[fi][1].size()
-			if curframelen > self.length:
-				self.frames[fi][1].delete(self.length, tk.END)
-			elif curframelen < self.length:
-				self.frames[fi][1].insert(
-					tk.END, *(BLANK for _ in range(self.length - curframelen))
-				)
-		if self.curcelly is None:
-			return
-		if self.curcelly > self.length - 1:
-			self.curcelly = self.length - 1
-		if self.curcelly < 0:
-			self.curcelly = None
+		scroll = self._scroll_get()
+		src_w = self.framecontainer.grid_columnconfigure(src_frame)["weight"] \
+			if src_col is None else None
+		tgt_w = self.framecontainer.grid_columnconfigure(tgt_frame)["weight"] \
+			if tgt_col is None else None
+		if src_col is not None: src_col.setdisplay(None)
+		if tgt_col is not None: tgt_col.setdisplay(None)
+		if src_col is not None:
+			src_col.setdisplay(tgt_frame)
+		else:
+			self.framecontainer.grid_columnconfigure(tgt_frame, weight = src_w)
+		if tgt_col is not None:
+			tgt_col.setdisplay(src_frame)
+		else:
+			self.framecontainer.grid_columnconfigure(src_frame, weight = tgt_w)
+		self._scroll_restore(scroll)
 		self._y_selection_redraw()
 
-	def __scrollallbar(self, *args):
+	def _scroll_get(self):
+		if not self.frames:
+			return None
+		return self.frames[0][1].yview()[0]
+
+	def _scroll_restore(self, scroll):
+		if scroll is not None:
+			self._scrollalllistbox(scroll, 1.0)
+
+	def _scrollallbar(self, *args):
 		"""Bound to the scrollbar; Will scroll listboxes."""
 		# args can have 2 or 3 values
 		for i in self.frames:
 			i[1].yview(*args)
 
-	def __scrollalllistbox(self, a, b):
+	def _scrollalllistbox(self, a, b):
 		"""Bound to all listboxes so that they will scroll the other ones
 		and scrollbar.
 		"""
@@ -1322,7 +1287,24 @@ class MultiframeList(ttk.Frame):
 			i[1].yview_moveto(a)
 		self.scrollbar.set(a, b)
 
-	def __themeupdate(self, _):
+	def _set_curcellx(self, new_x):
+		"""
+		Use this for any change to `self.curcellx`.
+		Will configure the `XActive` style appropiately.
+		NOTE maybe use a @property setter?
+		"""
+		old_x = self.curcellx
+		self.curcellx = new_x
+		if old_x is not None:
+			self.frames[old_x][1].configure(
+				**self._get_listbox_conf(self.frames[old_x][1])
+			)
+		if new_x is not None:
+			self.frames[new_x][1].configure(
+				**self._get_listbox_conf(self.frames[new_x][1], True)
+			)
+
+	def _theme_update(self, _):
 		"""
 		Called from event binding when the current theme changes.
 		Changes Listbox look, as those are not available as ttk variants.
@@ -1332,6 +1314,22 @@ class MultiframeList(ttk.Frame):
 			axconf = self._get_listbox_conf(self.frames[0][1], True)
 		for i, f in enumerate(self.frames):
 			f[1].configure(**(axconf if i == self.curcellx else conf))
+
+	def _y_selection_redraw(self):
+		"""
+		Should be called after `self.curcelly` is modified.
+		Purely cosmetic effect, as actual selection access should only
+		occur via self.get_selected_cell()
+		"""
+		sel = self.curcelly
+		if sel is None:
+			for i in self.frames:
+				i[1].selection_clear(0, tk.END)
+			return
+		for i in self.frames:
+			i[1].selection_clear(0, tk.END)
+			i[1].selection_set(sel)
+			i[1].activate(sel)
 
 if __name__ == "__main__":
 	from multiframe_list.demo import run_demo
