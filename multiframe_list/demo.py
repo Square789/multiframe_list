@@ -31,17 +31,14 @@ class Demo:
 		self.mfl = MultiframeList(self.root, inicolumns=(
 			{"name": "Small", "minsize": 40},
 			{"name": "Sortercol", "col_id": "sorter"},
-			{
-				"name": "Pricecol", "sort": True, "col_id": "sickocol",
-				"weight": round(WEIGHT * 3)
-			},
+			{"name": "Pricecol", "sort": True, "col_id": "sickocol",
+				"weight": round(WEIGHT * 3)},
 			{"name": "-100", "col_id": "sub_col", "formatter": lambda n: n - 100},
-			{"name": "Wide col", "minsize": 200},
+			{"name": "Wide col sorting randomly", "minsize": 200,
+				"sort": True, "sortkey": lambda _: randint(1, 100)},
 			{"col_id": "cnfcl"},
-			{
-				"name": "Doubleclick me", "col_id": "dbc_col", "minsize": 80,
-				"dblclick_cmd": self.doubleclick_column_callback,
-			},
+			{"name": "Doubleclick me", "col_id": "dbc_col", "minsize": 80,
+				"dblclick_cmd": self.doubleclick_column_callback},
 		))
 		self.mfl.config_column("sickocol", formatter = priceconv)
 		self.mfl.config_column("sorter", sort = True)
@@ -93,10 +90,8 @@ class Demo:
 			self.mfl.remove_column("newcol")
 		else:
 			self.mfl.add_columns(
-				{
-					"col_id": "newcol", "name": "added @ runtime; wide.",
-					"minsize": 30, "weight": 3 * WEIGHT
-				}
+				{"col_id": "newcol", "name": "added @ runtime; wide.",
+					"minsize": 30, "weight": 3 * WEIGHT}
 			)
 			self.mfl.assign_column("newcol", 6)
 

@@ -10,7 +10,7 @@ import tkinter as tk
 import tkinter.ttk as ttk
 from operator import itemgetter
 
-__version__ = "3.0.0"
+__version__ = "3.1.0"
 __author__ = "Square789"
 
 BLANK = ""
@@ -100,6 +100,8 @@ class _Column():
 	names: Name to appear in the label and title the column.
 	sort: Whether the column should sort the entire MultiframeList when its
 		label is clicked.
+	sortkey: A function that will be used to sort values in this column,
+		just like the regular `sorted` `key` kwarg.
 	minsize: Specify the minimum amount of pixels the column should be wide.
 		This option gets passed to the grid geometry manager and will at least
 		be `MIN_WIDTH`.
@@ -110,8 +112,12 @@ class _Column():
 		to be able to sort by a unix timestamp but still be able to have the
 		dates in a human-readable format.
 	fallback_type: A datatype that all elements of the column will be converted
-		to in case it has to be sorted. If not specified and elements are of
-		different types, an exception will be raised.
+		to in case it has to be sorted and the sort fails due to a TypeError.
+		Note that this will modify the contained elements upon sorting and is
+		meant for type correction if they are entered uncleanly. For a key
+		function, see `sortkey`.
+		If not specified and elements are of different types, exception will be
+		raised normally.
 	dblclick_cmd: A command that will be run when the column is double-clicked.
 		Will be called with an event as only parameter.
 	"""
@@ -122,17 +128,18 @@ class _Column():
 
 	class Config():
 		__slots__ = (
-			"name", "sort", "minsize", "weight", "formatter", "fallback_type",
-			"dblclick_cmd",
+			"name", "sort", "sortkey", "minsize", "weight", "formatter",
+			"fallback_type", "dblclick_cmd",
 		)
 		def __init__(
 			self,
-			name = "<NO_NAME>", sort = False, minsize = MIN_WIDTH,
-			weight = WEIGHT, formatter = None, fallback_type = None,
-			dblclick_cmd = None,
+			name = BLANK, sort = False, sortkey = None,
+			minsize = MIN_WIDTH, weight = WEIGHT, formatter = None,
+			fallback_type = None, dblclick_cmd = None,
 		):
 			self.name = name
 			self.sort = sort
+			self.sortkey = sortkey
 			self.minsize = minsize
 			self.weight = weight
 			self.formatter = formatter
@@ -147,9 +154,9 @@ class _Column():
 
 		self._cnfcmd = {
 			"name": self._cnf_name, "sort": self._cnf_sort,
-			"minsize": self._cnf_grid, "weight": self._cnf_grid,
-			"formatter": self.format, "fallback_type": lambda: False,
-			"dblclick_cmd": self._cnf_dblclick_cmd,
+			"sortkey": lambda: False, "minsize": self._cnf_grid,
+			"weight": self._cnf_grid, "formatter": self.format,
+			"fallback_type": lambda: False, "dblclick_cmd": self._cnf_dblclick_cmd,
 		}
 
 		if col_id is None:
@@ -348,7 +355,7 @@ class MultiframeList(ttk.Frame):
 			"MultiframeList.Listbox" to its listboxes, as those are not
 			available as ttk variants.
 		The column title labels listen to the style "MultiframeListTitle.TLabel"
-		The column sort indicators listen to the style "MultiframeLisSortInd.Tlabel"
+		The column sort indicators listen to the style "MultiframeListSortInd.Tlabel"
 		The reorder/resizing indicators listen to the styles
 			"MultiframeListResizeInd.TFrame" and "MultiframeListReorderInd.TFrame".
 	The list broadcasts the Virtual event "<<MultiframeSelect>>" to its parent
@@ -863,30 +870,37 @@ class MultiframeList(ttk.Frame):
 		calling column where id, sortstate and - if needed - the
 		fallback type are read from.
 		"""
-		sortstate = call_col.sortstate
 		caller_id = call_col.col_id
 		scroll = self._scroll_get()
-		new_sortstate = abs(int(sortstate) - 1)
+
+		new_sortstate = abs(int(call_col.sortstate) - 1)
 		rev = bool(new_sortstate)
 		call_col.set_sortstate(new_sortstate)
 		for col in self.columns.values(): # reset sortstate of other columns
 			if col.col_id != caller_id:
 				col.set_sortstate(2)
+
 		tmpdat, colidmap = self.get_rows(ALL)
 		datacol_index = colidmap[caller_id]
+		keyfunc_internal = itemgetter(datacol_index)
+		if call_col.cnf.sortkey is not None:
+			keyfunc = lambda e: call_col.cnf.sortkey(keyfunc_internal(e))
+		else:
+			keyfunc = keyfunc_internal
+
 		try:
-			tmpdat = sorted(tmpdat, key = itemgetter(datacol_index), reverse = rev)
+			tmpdat = sorted(tmpdat, key = keyfunc, reverse = rev)
 		except TypeError:
-			fb_type = call_col.config().fallback_type
+			fb_type = call_col.cnf.fallback_type
 			if fb_type is None:
 				raise
 			for i, _ in enumerate(tmpdat):
 				tmpdat[i][datacol_index] = fb_type(tmpdat[i][datacol_index])
-			tmpdat = sorted(tmpdat, key = itemgetter(datacol_index), reverse = rev)
-		newdat = {}
-		for col_id in colidmap:
-			datacol_i = colidmap[col_id]
-			newdat[col_id] = [i[datacol_i] for i in tmpdat]
+			tmpdat = sorted(tmpdat, key = keyfunc, reverse = rev)
+		newdat = {
+			col_id: [r[idx] for r in tmpdat]
+			for col_id, idx in colidmap.items()
+		}
 		self.set_data(newdat, reset_sortstate = False)
 		self.format()
 		self._scroll_restore(scroll)
