@@ -3,10 +3,10 @@ Shoddy demonstration of the MultiframeList.
 To run in, call run_demo().
 """
 
-from random import randint, sample
+from random import choice, randint, sample
 import tkinter as tk
 
-from multiframe_list.multiframe_list import MultiframeList, END, WEIGHT
+from multiframe_list.multiframe_list import MultiframeList, END, SELECTION_TYPE, WEIGHT
 
 def priceconv(data):
 	return f"${data}"
@@ -28,23 +28,29 @@ class Demo:
 			"<<MultiframeRightclick>>",
 			lambda e: print("Rightclick on", e.widget, "@", self.mfl.get_last_click())
 		)
-		self.mfl = MultiframeList(self.root, inicolumns=(
-			{"name": "Small", "minsize": 40},
-			{"name": "Sortercol", "col_id": "sorter"},
-			{"name": "Pricecol", "sort": True, "col_id": "sickocol",
-				"weight": round(WEIGHT * 3)},
-			{"name": "-100", "col_id": "sub_col", "formatter": lambda n: n - 100},
-			{"name": "Wide col sorting randomly", "minsize": 200,
-				"sort": True, "sortkey": lambda _: randint(1, 100)},
-			{"col_id": "cnfcl"},
-			{"name": "Doubleclick me", "col_id": "dbc_col", "minsize": 80,
-				"dblclick_cmd": self.doubleclick_column_callback},
-		))
+		self.mfl = MultiframeList(self.root, inicolumns = (
+				{"name": "Small", "minsize": 40},
+				{"name": "Sortercol", "col_id": "sorter"},
+				{"name": "Pricecol", "sort": True, "col_id": "sickocol",
+					"weight": round(WEIGHT * 3)},
+				{"name": "-100", "col_id": "sub_col", "formatter": lambda n: n - 100},
+				{"name": "Wide col sorting randomly", "minsize": 200,
+					"sort": True, "sortkey": lambda _: randint(1, 100)},
+				{"col_id": "cnfcl"},
+				{"name": "Doubleclick me", "col_id": "dbc_col", "minsize": 80,
+					"dblclick_cmd": self.doubleclick_column_callback},
+			),
+			curcell_style = {"background": "#AA0000", "selectbackground": "#FF0000"},
+			curcell_row_style = {"background": "#000000", "selectbackground": "#333333"},
+			curcell_span_row = True,
+			reorderable = True,
+		)
 		self.mfl.config_column("sickocol", formatter = priceconv)
 		self.mfl.config_column("sorter", sort = True)
 		self.mfl.config_column(
 			"cnfcl",
-			name = "Configured Name", sort = True,
+			name = "Configured Name",
+			sort = True,
 			fallback_type = lambda x: int("0" + str(x))
 		)
 		self.mfl.pack(expand = 1, fill = tk.BOTH)
@@ -121,6 +127,8 @@ class Demo:
 			"reorderable": bool(randint(0, 1)),
 			"resizable": bool(randint(0, 1)),
 			"rightclickbtn": randint(2, 3),
+			"selection": choice([SELECTION_TYPE.SINGLE, SELECTION_TYPE.MULTIPLE]),
+			"curcell_span_row": bool(randint(0, 1)),
 		}
 		print(f"Randomly configuring: {cfg!r}")
 		self.mfl.config(**cfg)
@@ -134,7 +142,7 @@ class Demo:
 	def randstyle(self):
 		self.root.tk.eval((
 			"ttk::style configure MultiframeList.Listbox -background #{0}{0}{0} -foreground #0000{1:0>2}\n"
-			"ttk::style configure XActive.MultiframeList.Listbox -selectbackground #0000{0}\n"
+			"ttk::style configure XActive.MultiframeList.Listbox -activebackground #{0}{0}{0} -selectbackground #0000{0}\n"
 			"ttk::style configure MultiframeListReorderInd.TFrame -background #{0}0000\n"
 			"ttk::style configure MultiframeListResizeInd.TFrame -background #0000{0}\n"
 		).format(hex(randint(120, 255))[2:], hex(randint(0, 255))[2:]))
