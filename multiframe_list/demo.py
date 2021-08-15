@@ -40,9 +40,9 @@ class Demo:
 				{"name": "Doubleclick me", "col_id": "dbc_col", "minsize": 80,
 					"dblclick_cmd": self.doubleclick_column_callback},
 			),
-			curcell_style = {"background": "#AA0000", "selectbackground": "#FF0000"},
-			curcell_row_style = {"background": "#000000", "selectbackground": "#333333"},
-			curcell_span_row = True,
+			active_cell_style = {"background": "#AA0000", "selectbackground": "#FF0000"},
+			active_cell_row_style = {"background": "#000000", "selectbackground": "#333333"},
+			active_cell_span_row = False,
 			reorderable = True,
 		)
 		self.mfl.config_column("sickocol", formatter = priceconv)
@@ -58,6 +58,9 @@ class Demo:
 		self.mfl.remove_frames(1)
 
 		self.randstyle()
+		for _ in range(10):
+			self.adddata()
+
 
 		btns = (
 			tk.Button(self.root, text="+row",     command=self.adddata),
@@ -68,8 +71,8 @@ class Demo:
 			tk.Button(self.root, text="?columns", command=lambda: print(self.mfl.get_columns())),
 			tk.Button(self.root, text="?currow",  command=self.getcurrrow),
 			tk.Button(self.root, text="?to_end",  command=lambda: self.getcurrrow(END)),
-			tk.Button(self.root, text="?curcell", command=lambda: print(self.mfl.get_selected_cell())),
-			tk.Button(self.root, text="?length",  command=lambda: print(self.mfl.get_len())),
+			tk.Button(self.root, text="?curcell", command=lambda: print(self.mfl.get_active_cell())),
+			tk.Button(self.root, text="?length",  command=lambda: print(self.mfl.get_length())),
 			tk.Button(self.root, text="+column",  command=self.add1col),
 			tk.Button(self.root, text="swap01",   command=self.swap01),
 			tk.Button(self.root, text="swaprnd",  command=self.swaprand),
@@ -102,14 +105,14 @@ class Demo:
 			self.mfl.assign_column("newcol", 6)
 
 	def doubleclick_column_callback(self, _):
-		x, y = self.mfl.get_selected_cell()
+		x, y = self.mfl.get_active_cell()
 		if y is None:
 			print("Empty column!")
 		else:
 			print(f"{self.mfl.get_cell('dbc_col', y)} @ ({x}, {y})")
 
 	def getcurrrow(self, end = None):
-		x_idx = self.mfl.get_selected_cell()[1]
+		x_idx = self.mfl.get_active_cell()[1]
 		if x_idx is None:
 			print("No row is selected, cannot tell.")
 			return
@@ -128,7 +131,7 @@ class Demo:
 			"resizable": bool(randint(0, 1)),
 			"rightclickbtn": randint(2, 3),
 			"selection": choice([SELECTION_TYPE.SINGLE, SELECTION_TYPE.MULTIPLE]),
-			"curcell_span_row": bool(randint(0, 1)),
+			"active_cell_span_row": bool(randint(0, 1)),
 		}
 		print(f"Randomly configuring: {cfg!r}")
 		self.mfl.config(**cfg)
@@ -142,7 +145,6 @@ class Demo:
 	def randstyle(self):
 		self.root.tk.eval((
 			"ttk::style configure MultiframeList.Listbox -background #{0}{0}{0} -foreground #0000{1:0>2}\n"
-			"ttk::style configure XActive.MultiframeList.Listbox -activebackground #{0}{0}{0} -selectbackground #0000{0}\n"
 			"ttk::style configure MultiframeListReorderInd.TFrame -background #{0}0000\n"
 			"ttk::style configure MultiframeListResizeInd.TFrame -background #0000{0}\n"
 		).format(hex(randint(120, 255))[2:], hex(randint(0, 255))[2:]))
@@ -155,9 +157,9 @@ class Demo:
 	def remrow(self):
 		if self.mfl.length == 0:
 			print("List is empty already!"); return
-		if self.mfl.get_selected_cell()[1] is None:
+		if self.mfl.get_active_cell()[1] is None:
 			print("Select a row to delete!"); return
-		self.mfl.remove_row(self.mfl.get_selected_cell()[1])
+		self.mfl.remove_row(self.mfl.get_active_cell()[1])
 
 	def swap(self, first, second):
 		_tmp = self.mfl.get_columns()
