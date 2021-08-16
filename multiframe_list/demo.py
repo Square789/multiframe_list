@@ -40,8 +40,6 @@ class Demo:
 				{"name": "Doubleclick me", "col_id": "dbc_col", "minsize": 80,
 					"dblclick_cmd": self.doubleclick_column_callback},
 			),
-			active_cell_style = {"background": "#AA0000", "selectbackground": "#FF0000"},
-			active_cell_row_style = {"background": "#000000", "selectbackground": "#333333"},
 			active_cell_span_row = False,
 			reorderable = True,
 		)
@@ -144,10 +142,18 @@ class Demo:
 
 	def randstyle(self):
 		self.root.tk.eval((
-			"ttk::style configure MultiframeList.Listbox -background #{0}{0}{0} -foreground #0000{1:0>2}\n"
+			"ttk::style configure MultiframeList.Listbox -background #{0}{0}{0} -foreground #0000{1}\n"
+			"ttk::style configure MultiframeList.Listbox -selectbackground #{1}{2}{3}\n"
 			"ttk::style configure MultiframeListReorderInd.TFrame -background #{0}0000\n"
 			"ttk::style configure MultiframeListResizeInd.TFrame -background #0000{0}\n"
-		).format(hex(randint(120, 255))[2:], hex(randint(0, 255))[2:]))
+			"ttk::style configure MultiframeList.ActiveCell -background #{0}{1}{2} -selectbackground #{0}0000\n"
+			"ttk::style configure MultiframeList.ActiveRow -background #000000 -selectbackground #333333\n"
+		).format(
+			f"{randint(120, 255):0>2X}",
+			f"{randint(  0, 255):0>2X}",
+			f"{randint(  0, 255):0>2X}",
+			f"{randint(  0, 255):0>2X}",
+		))
 
 	def remframe(self):
 		if len(self.mfl.frames) <= 7:

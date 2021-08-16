@@ -373,11 +373,20 @@ class MultiframeList(ttk.Frame):
 		The column sort indicators listen to the style "MultiframeListSortInd.Tlabel"
 		The reorder/resizing indicators listen to the styles
 			"MultiframeListResizeInd.TFrame" and "MultiframeListReorderInd.TFrame".
+		The styles "MultiframeList.ActiveCell" and "MultiframeList.ActiveRow" are
+			responsible for the colors of the active cell. They are implemented by
+			calling the listboxes' `itemconfigure` method and thus only support the
+			arguments given by it: `foreground`, `background`, `selectforeground` and
+			`selectbackground`.
+			"ActiveRow" is only relevant if the MultiframeList is configured to color
+			the active cell's row as well.
+
 	The list broadcasts the Virtual event "<<MultiframeSelect>>" to its parent
-		whenever something is selected.
+		whenever something is selected (only after a mousebutton release).
 	The list broadcasts the Virtual event "<<MultiframeRightclick>>" to its
 		parent whenever a right click is performed or the context menu button
 		is pressed.
+	The list will reset the active selection when Escape is pressed.
 	"""
 	_DEFAULT_LISTBOX_CONFIG = {
 		"activestyle": "underline",
@@ -407,12 +416,12 @@ class MultiframeList(ttk.Frame):
 	class Config():
 		__slots__ = (
 			"rightclickbtn", "click_key", "listboxheight", "reorderable",
-			"resizable", "selection", "active_cell_span_row", "active_cell_style",
+			"resizable", "selection_type", "active_cell_span_row", "active_cell_style",
 			"active_cell_row_style",
 		)
 		def __init__(
 			self, rightclickbtn = "3", click_key = "space", listboxheight = 10,
-			reorderable = False, resizable = False, selection = SELECTION_TYPE.MULTIPLE,
+			reorderable = False, resizable = False, selection_type = SELECTION_TYPE.MULTIPLE,
 			active_cell_span_row = False, active_cell_style = None, active_cell_row_style = None,
 		):
 			self.rightclickbtn = rightclickbtn
@@ -420,7 +429,7 @@ class MultiframeList(ttk.Frame):
 			self.listboxheight = listboxheight
 			self.reorderable = reorderable
 			self.resizable = resizable
-			self.selection = selection
+			self.selection_type = selection_type
 			self.active_cell_span_row = active_cell_span_row
 			self.active_cell_style = {} if active_cell_style is None \
 				else active_cell_style
@@ -458,22 +467,11 @@ class MultiframeList(ttk.Frame):
 		resizable <Bool>: Whether the columns of the MultiframeList should be
 			resizable by the user dragging the column headers. False by default.
 
-		selection <SELECTION_TYPE>: Selection type to use for the MultiframeList.
+		selection_type <SELECTION_TYPE>: Selection type to use for the MultiframeList.
 			When changed, the selection will be cleared. MULTIPLE by default.
 
 		active_cell_span_row <Bool>: Whether the selected active cell will apply a
 			per-item style across its entire row. False by default.
-
-		active_cell_style <Dict>: A dict that defines how the active cell is drawn.
-			This is done using `itemconfigure` calls, which support the following
-			four arguments: `background`, `foreground`, `selectbackground` and
-			`selectforeground`. If any of these items are empty strings, the
-			listbox style defines the item's look. If the dict is empty, the active
-			cell style will not be applied at all. Empty dict by default.
-
-		active_cell_row_style <Dict>: A dict that defines how the row of the active cell
-			is drawn. Same as `active_cell_style` and only relevant if `active_cell_span_row`
-			is `True`. Empty dict by default.
 		"""
 		super().__init__(master, takefocus = True)
 
@@ -494,8 +492,9 @@ class MultiframeList(ttk.Frame):
 		if ctxtmen_btn is not None:
 			self.bind(f"<KeyPress-{ctxtmen_btn}>", self._on_menu_button)
 		self.bind(f"<KeyPress-{self.cnf.click_key}>", self._on_click_key)
+		self.bind(f"<Escape>", lambda _: self._selection_clear())
 
-		self.ttkhookstyle = ttk.Style()
+		self.ttk_style = ttk.Style()
 		self.bind("<<ThemeChanged>>", self._theme_update)
 
 		# Last direct cell that was interacted with
@@ -518,6 +517,9 @@ class MultiframeList(ttk.Frame):
 		# Whether the cursor has left the initially clicked element between press and
 		# release of the mouse button.
 		self._is_simple_click = True
+
+		self._active_cell_style = self.ttk_style.configure("MultiframeList.ActiveCell")
+		self._active_row_style = self.ttk_style.configure("MultiframeList.ActiveRow")
 
 		# Frame index of the last pressed frame header
 		self.pressed_frame = None
@@ -1126,7 +1128,7 @@ class MultiframeList(ttk.Frame):
 		conf = self._DEFAULT_LISTBOX_CONFIG.copy()
 		to_query = (".", "MultiframeList.Listbox")
 		for style in to_query:
-			cur_style_cnf = self.ttkhookstyle.configure(style)
+			cur_style_cnf = self.ttk_style.configure(style)
 			if cur_style_cnf is not None:
 				conf.update(cur_style_cnf)
 		ok_options = listbox.configure().keys()
@@ -1296,8 +1298,9 @@ class MultiframeList(ttk.Frame):
 	def _on_listbox_mouse_motion(self, event, button, frameindex):
 		"""
 		Called by listboxes whenever a mousebutton is dragged.
-		Will set the selection if the MultiframeList ist configured to
-		the `MULTIPLE` selection type.
+		Will set the selection in accordance to whether the click the
+		drag stems from was done with ctrl/shift, the selection anchor
+		and the selection type.
 		"""
 		if self._last_click_event is None:
 			return
@@ -1325,9 +1328,10 @@ class MultiframeList(ttk.Frame):
 	def _on_listbox_mouse_press(self, event, button, frameindex):
 		"""
 		Called by listboxes whenever a mouse button is pressed on them.
-		# TODO new doc
+		Sets the active cell to the cell under the mouse pointer and
+		sets internal drag selection variables.
 		"""
-		# Relay focus back to mfl
+		# Reset focus to mfl, all mouse events will still go to the listbox
 		self.focus()
 		if self.length == 0:
 			return
@@ -1338,7 +1342,7 @@ class MultiframeList(ttk.Frame):
 			tosel = self.length - 1
 		self._set_active_cell(frameindex, tosel)
 		if (
-			self.cnf.selection is not SELECTION_TYPE.MULTIPLE or
+			self.cnf.selection_type is not SELECTION_TYPE.MULTIPLE or
 			(not (event.state & _SHIFT) and not (event.state & _CONTROL))
 		):
 			# reset immediatedly when the new selection drag is replacing
@@ -1348,6 +1352,11 @@ class MultiframeList(ttk.Frame):
 
 	def _on_listbox_mouse_release(self, event, button, frameindex):
 		"""
+		Called by listboxes when the mouse is released over them.
+		Will set the selection only if the click was a simple click,
+		if it was a dragging selection this will have been done by
+		`_on_listbox_mouse_hover`.
+		Generates <<MultiframeSelect>> and <<MultiframeRightclick>> events.
 		"""
 		if self._is_simple_click:
 			with_ctrl = bool(self._last_click_event.state & _CONTROL)
@@ -1406,13 +1415,13 @@ class MultiframeList(ttk.Frame):
 		if self.cnf.active_cell_span_row:
 			for idx, i in enumerate(self.frames):
 				i[1].itemconfigure(self.active_cell_y, **(
-					self.cnf.active_cell_style
+					self._active_cell_style
 					if idx == self.active_cell_x else
-					self.cnf.active_cell_row_style
+					self._active_row_style
 				))
 		else:
 			self.frames[self.active_cell_x][1].itemconfigure(
-				self.active_cell_y, self.cnf.active_cell_style
+				self.active_cell_y, self._active_cell_style
 			)
 
 
@@ -1423,16 +1432,16 @@ class MultiframeList(ttk.Frame):
 		"""
 		for i in self.frames:
 			i[1].selection_clear(0, tk.END)
-		# if self.cnf.selection is SELECTION_TYPE.SINGLE:
+		# if self.cnf.selection_type is SELECTION_TYPE.SINGLE:
 		# 	print(f"redrawing selection: {self.selection}")
-		# elif self.cnf.selection is SELECTION_TYPE.MULTIPLE:
+		# elif self.cnf.selection_type is SELECTION_TYPE.MULTIPLE:
 		# 	print(f"redrawing selection: [{''.join(' x'[v] for v in self.selection)}]")
 		if self.selection is None:
 			return
-		if self.cnf.selection is SELECTION_TYPE.SINGLE:
+		if self.cnf.selection_type is SELECTION_TYPE.SINGLE:
 			for i in self.frames:
 				i[1].selection_set(self.selection)
-		elif self.cnf.selection is SELECTION_TYPE.MULTIPLE:
+		elif self.cnf.selection_type is SELECTION_TYPE.MULTIPLE:
 			for idx, v in enumerate(self.selection):
 				if v:
 					for i in self.frames:
@@ -1508,9 +1517,9 @@ class MultiframeList(ttk.Frame):
 		Clears the selection.
 		"""
 		self._selection_anchor = None
-		if self.cnf.selection is SELECTION_TYPE.SINGLE:
+		if self.cnf.selection_type is SELECTION_TYPE.SINGLE:
 			self.selection = None
-		elif self.cnf.selection is SELECTION_TYPE.MULTIPLE:
+		elif self.cnf.selection_type is SELECTION_TYPE.MULTIPLE:
 			self.selection = [False] * self.length
 		if redraw:
 			self._redraw_selection()
@@ -1525,7 +1534,7 @@ class MultiframeList(ttk.Frame):
 		If supplied with a list in SINGLE selection type, raises a ValueError.
 		"""
 		if isinstance(what, list):
-			if self.cnf.selection is not SELECTION_TYPE.MULTIPLE:
+			if self.cnf.selection_type is not SELECTION_TYPE.MULTIPLE:
 				raise ValueError(
 					"Can't set selection to a list when selection type is not MULTIPLE."
 				)
@@ -1555,7 +1564,7 @@ class MultiframeList(ttk.Frame):
 		If `toggle` is `True`, will toggle every element in the selection bound instead
 		of setting it.
 		"""
-		if self.cnf.selection is SELECTION_TYPE.SINGLE or self._selection_anchor is None:
+		if self.cnf.selection_type is SELECTION_TYPE.SINGLE or self._selection_anchor is None:
 			self._selection_set(target, toggle = toggle)
 			return
 		step = -1 if target < self._selection_anchor else 1
@@ -1573,12 +1582,12 @@ class MultiframeList(ttk.Frame):
 		"""
 		if self._selection_anchor is None:
 			self._selection_anchor = idx
-		if self.cnf.selection is SELECTION_TYPE.SINGLE:
+		if self.cnf.selection_type is SELECTION_TYPE.SINGLE:
 			if toggle and self.selection == idx:
 				self.selection = None
 			else:
 				self.selection = idx
-		elif self.cnf.selection is SELECTION_TYPE.MULTIPLE:
+		elif self.cnf.selection_type is SELECTION_TYPE.MULTIPLE:
 			if toggle:
 				self.selection[idx] = not self.selection[idx]
 			else:
@@ -1599,12 +1608,12 @@ class MultiframeList(ttk.Frame):
 			self.active_cell_x = new_x
 			if old_x is not None and old_y is not None:
 				self.frames[old_x][1].itemconfigure(old_y, **(
-					self.cnf.active_cell_row_style
+					self._active_row_style
 					if self.cnf.active_cell_span_row else
 					self._DEFAULT_ITEMCONFIGURE
 				))
 			if new_x is not None and new_y is not None:
-				self.frames[new_x][1].itemconfigure(new_y, **self.cnf.active_cell_style)
+				self.frames[new_x][1].itemconfigure(new_y, **self._active_cell_style)
 
 		if new_y != old_y:
 			if old_y is not None:
@@ -1640,13 +1649,20 @@ class MultiframeList(ttk.Frame):
 	def _theme_update(self, _):
 		"""
 		Called from event binding when the current theme changes.
-		Changes Listbox look, as those are not available as ttk variants.
+		Changes Listbox look, as those are not available as ttk variants,
+		and updates the active cell style.
 		"""
+		self._active_cell_style = self.ttk_style.configure("MultiframeList.ActiveCell")
+		self._active_row_style = self.ttk_style.configure("MultiframeList.ActiveRow")
+
 		if not self.frames:
 			return
+
 		conf = self._get_listbox_conf(self.frames[0][1])
 		for f in self.frames:
 			f[1].configure(**conf)
+
+		self._redraw_active_cell()
 
 	def _undraw_active_cell(self):
 		"""
