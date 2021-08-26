@@ -1396,8 +1396,7 @@ class MultiframeList(ttk.Frame):
 		<<MultiframeRightclick>> event.
 		Resets click variables.
 		"""
-		# Safeguard for i. e: Click1, Click3, Release3, Release1
-		# NOTE: these should be handled differently as well / behave very
+		# NOTE: these should be handled differently / behave very
 		# specifically in the windows listboxes but tbh who cares
 		if self._last_click_event is None:
 			return
@@ -1460,7 +1459,6 @@ class MultiframeList(ttk.Frame):
 			self.frames[self.active_cell_x][1].itemconfigure(
 				self.active_cell_y, self._active_cell_style
 			)
-
 
 	def _redraw_selection(self):
 		"""
@@ -1542,7 +1540,8 @@ class MultiframeList(ttk.Frame):
 
 	def _selection_clear(self, redraw = True):
 		"""
-		Clears the selection.
+		Clears the selection anchor and the selection.
+		If `redraw` is `True`, will also redraw the selection.
 		"""
 		self._selection_anchor = None
 		self.selection.clear()
@@ -1634,10 +1633,16 @@ class MultiframeList(ttk.Frame):
 		"""
 		Use this for any change to `self.length`. This method updates
 		frames without a column so the amount of blank strings in them
-		stays correct, clears the selection and will adjust the active
-		cell if necessary.
+		stays correct, clears the selection generating an event if it
+		was not empty previously, will adjust the active cell if it runs
+		out of bounds and clear the click/dragging event.
 		"""
 		self.length = new_length
+
+		# Will cause errors otherwise if change occurs while user is dragging
+		self._last_click_event = None
+		self._last_dragged_over_element = None
+		self._is_simple_click = True
 
 		if self.active_cell_y is not None:
 			new_ay = self.active_cell_y
