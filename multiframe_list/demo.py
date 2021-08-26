@@ -62,7 +62,7 @@ class Demo:
 
 		btns = (
 			tk.Button(self.root, text="+row",     command=self.adddata),
-			tk.Button(self.root, text="-row",     command=self.remrow),
+			tk.Button(self.root, text="-sel",     command=self.remsel),
 			tk.Button(self.root, text="---",      command=self.mfl.clear),
 			tk.Button(self.root, text="+frame",   command=lambda: self.mfl.add_frames(1)),
 			tk.Button(self.root, text="-frame",   command=self.remframe),
@@ -79,7 +79,7 @@ class Demo:
 			)),
 			tk.Button(self.root, text="lbstyle",  command=self.randstyle),
 			tk.Button(self.root, text="conf",     command=self.randcfg),
-			tk.Button(self.root, text="randsel",  command=self.randselection),
+			tk.Button(self.root, text="randac",  command=self.randactive),
 		)
 
 		for btn in btns:
@@ -116,7 +116,6 @@ class Demo:
 			return
 		outdat, mapdict = self.mfl.get_rows(x_idx, end)
 		l_elem = max(getlongest(outdat), getlongest(mapdict.keys()))
-		fmtstr = "{:<{ml}}"
 		print("|".join(f"{k:<{l_elem}}" for k in mapdict.keys()))
 		print("-" * (l_elem + 1) * len(mapdict.keys()))
 		for row in outdat:
@@ -128,17 +127,17 @@ class Demo:
 			"reorderable": bool(randint(0, 1)),
 			"resizable": bool(randint(0, 1)),
 			"rightclickbtn": randint(2, 3),
-			"selection": choice([SELECTION_TYPE.SINGLE, SELECTION_TYPE.MULTIPLE]),
+			"selection_type": choice([SELECTION_TYPE.SINGLE, SELECTION_TYPE.MULTIPLE]),
 			"active_cell_span_row": bool(randint(0, 1)),
 		}
 		print(f"Randomly configuring: {cfg!r}")
 		self.mfl.config(**cfg)
 
-	def randselection(self):
+	def randactive(self):
 		length = self.mfl.get_length()
 		if length < 1:
 			return
-		self.mfl.set_selected_cell(0, randint(0, length - 1))
+		self.mfl.set_active_cell(0, randint(0, length - 1))
 
 	def randstyle(self):
 		self.root.tk.eval((
@@ -160,12 +159,11 @@ class Demo:
 			print("Cannot remove this many frames from example!"); return
 		self.mfl.remove_frames(1)
 
-	def remrow(self):
-		if self.mfl.length == 0:
-			print("List is empty already!"); return
-		if self.mfl.get_active_cell()[1] is None:
-			print("Select a row to delete!"); return
-		self.mfl.remove_row(self.mfl.get_active_cell()[1])
+	def remsel(self):
+		if not self.mfl.selection:
+			print("Make a selection to delete!")
+			return
+		self.mfl.remove_rows(self.mfl.selection)
 
 	def swap(self, first, second):
 		_tmp = self.mfl.get_columns()

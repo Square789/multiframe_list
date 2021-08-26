@@ -37,6 +37,27 @@ def _drag_intent(x, frame):
 		return DRAGINTENT.RESIZE
 	return DRAGINTENT.REORDER
 
+def _find_consecutive_sequences(lst):
+	"""
+	Given a **descendedly sorted list**, returns a list of ranges
+	of all consecutively descending ranges of numbers in the
+	given list. Duplicate numbers following one another are treated
+	as a single number.
+	Example: `[6, 5, 5, 4, 2, 1]` -> `[range(4, 7), range(1, 3)]`
+	"""
+	if not lst:
+		return []
+	last_start = lst[0]
+	last = None
+	res = []
+	for x in lst:
+		if last is not None and last != x and last != x + 1:
+			res.append(range(last, last_start + 1))
+			last_start = x
+		last = x
+	res.append(range(last, last_start + 1))
+	return res
+
 SORTSYM = ("\u25B2", "\u25BC", "\u25A0") # desc, asc, none
 
 # State modifier flags for tk event. These are hardcoded by tuple position
@@ -272,14 +293,16 @@ class _Column():
 			else:
 				self.mfl.frames[self.assignedframe][1].insert(index, elem)
 
-	def data_pop(self, index):
+	def data_delete(self, from_, to = None):
 		"""
-		Pops the element at index, refreshes interface if assigned a
-		frame.
+		Removes the elements from `from_` to `to` (end-exclusive), or
+		just `from_` if `to` is not given. Refreshes interface if
+		assigned a frame.
 		"""
-		self.data.pop(index)
+		to = from_ + 1 if to is None else to
+		self.data = self.data[:from_] + self.data[to:]
 		if self.assignedframe is not None:
-			self.mfl.frames[self.assignedframe][1].delete(index)
+			self.mfl.frames[self.assignedframe][1].delete(from_, to - 1)
 
 	def data_set(self, newdata):
 		"""
@@ -363,8 +386,7 @@ class _Column():
 
 class MultiframeList(ttk.Frame):
 	"""
-	Instantiates a multiframe tkinter based list, for rough description
-	see module docstring.
+	A multiframe tkinter based listview, for rough description see module docstring.
 
 	A terrible idea of a feature:
 		The MultiframeList will grab the currently active theme (as well as
@@ -384,13 +406,13 @@ class MultiframeList(ttk.Frame):
 			"ActiveRow" is only relevant if the MultiframeList is configured to color
 			the active cell's row as well.
 
-	The list broadcasts the Virtual event "<<MultiframeSelect>>" to its parent
-		whenever something is selected (only after a mousebutton release).
-	The list broadcasts the Virtual event "<<MultiframeRightclick>>" to its
-		parent whenever a right click is performed or the context menu button
-		is pressed.
+	The list broadcasts the Virtual event "<<MultiframeSelect>>" after the selection
+		is modified in any way.
+	The list broadcasts the Virtual event "<<MultiframeRightclick>>" whenever a right
+		click is performed or the context menu button is pressed.
 	The list will reset the active selection when Escape is pressed.
 	"""
+
 	_DEFAULT_LISTBOX_CONFIG = {
 		"activestyle": "underline",
 		"background": "#FFFFFF",
@@ -495,9 +517,7 @@ class MultiframeList(ttk.Frame):
 		if ctxtmen_btn is not None:
 			self.bind(f"<KeyPress-{ctxtmen_btn}>", self._on_menu_button)
 		self.bind(f"<KeyPress-{self.cnf.click_key}>", self._on_click_key)
-		self.bind(f"<Escape>", lambda _: self._selection_clear())
-
-		self.bind("q", lambda _: print(self.selection_size))
+		self.bind(f"<Escape>", self._on_escape)
 
 		self.ttk_style = ttk.Style()
 		self.bind("<<ThemeChanged>>", self._theme_update)
@@ -509,9 +529,7 @@ class MultiframeList(ttk.Frame):
 		self.coordx = None
 		self.coordy = None
 		# Selected items 
-		self.selection = None
-		# Amount of selected list items.
-		self.selection_size = 0
+		self.selection = set()
 		# --Stolen-- borrowed from tk, the first item a selection was started
 		# with, used for expanding it via shift-clicks/Up-Downs
 		self._selection_anchor = None
@@ -551,8 +569,6 @@ class MultiframeList(ttk.Frame):
 		# well as some metadata.
 
 		self.length = 0
-
-		self._cnf_selection(None) # If selection is multiple, should set up empty list.
 
 		if inicolumns is not None:
 			self.add_frames(len(inicolumns))
@@ -663,8 +679,7 @@ class MultiframeList(ttk.Frame):
 					raise RuntimeError(
 						f"Frame {req_frame} is already in use by column {col.col_id!r}"
 					)
-		col = self._get_col_by_id(col_id)
-		col.setdisplay(req_frame)
+		self._get_col_by_id(col_id).setdisplay(req_frame)
 		self._redraw_active_cell()
 		self._redraw_selection()
 
@@ -785,14 +800,12 @@ class MultiframeList(ttk.Frame):
 			self.frames.pop(i)
 		self.framecontainer.event_generate("<Configure>")
 
-	def set_selected_cell(self, x, y):
+	def set_active_cell(self, x, y):
 		"""
-		Sets the selected cell to the specified x and y coordinates.
+		Sets the active cell to the specified x and y coordinates.
 		You may also pass None to any of those.
 		If outside of viewport, the frames will be scrolled towards the
 		new index.
-
-		Will generate a <<MultiframeSelect>> event.
 		"""
 		if not all(isinstance(v, (int, NoneType)) for v in (x, y)):
 			raise TypeError("Invalid type for x and/or y coordinate.")
@@ -805,7 +818,6 @@ class MultiframeList(ttk.Frame):
 			for i in self.frames:
 				i[1].see(self.active_cell_y)
 		self._redraw_selection()
-		self.event_generate("<<MultiframeSelect>>", when = "tail")
 
 	#==DATA MODIFICATION, ALL==
 
@@ -830,15 +842,37 @@ class MultiframeList(ttk.Frame):
 				col.data_insert(BLANK, insindex)
 		self._set_length(self.length + 1)
 
-	def remove_row(self, index):
+	def remove_rows(self, what, to = None):
 		"""
-		Deletes the entire row at index.
+		If `what` is an int, deletes the rows from `what` to `to`
+		(end-exclusive).
+		If `to` is not given, only removes the row at `what`.
+		Has no effect if `to` <= `what`.
+		If `what` is not an int, it must be a container and all indices its
+		iteration yields will be removed. `to` will be ignored.
+		Properly sets the length and will clear the selection
+		Raises an IndexError if any index should be out of the list's range. 
 		"""
-		if index > (self.length - 1):
-			raise IndexError("Index to remove out of range.")
-		self._set_length(self.length - 1)
-		for col in self.columns.values():
-			col.data_pop(index)
+		if isinstance(what, int):
+			to = what + 1 if to is None else to
+			if what < 0 or what > (self.length - 1):
+				raise IndexError(f"`from` index {what} out of range.")
+			if to < 0 or to > self.length:
+				raise IndexError(f"`to` index {what} out of range.")
+			to_delete = [range(to - 1, what - 1, -1)]
+		else:
+			# Must be reversed to delete entries starting from the back,
+			# otherwise deletion of selection blocks will affect others
+			to_delete = sorted(what, reverse = True)
+			if to_delete and to_delete[0] > self.length - 1:
+				raise IndexError(f"Inaccessible deletion index: {to_delete[0]}")
+			if to_delete and to_delete[-1] < 0:
+				raise IndexError(f"Inaccessible deletion index: {to_delete[-1]}")
+			to_delete = _find_consecutive_sequences(to_delete)
+		self._set_length(self.length - sum(len(rng) for rng in to_delete))
+		for rng in to_delete:
+			for col in self.columns.values():
+				col.data_delete(rng.start, rng.stop)
 		self._redraw_active_cell()
 
 	def set_data(self, data, reset_sortstate = True):
@@ -879,7 +913,7 @@ class MultiframeList(ttk.Frame):
 		col = self._get_col_by_id(col_to_mod)
 		if y > (self.length - 1):
 			raise IndexError("Cell index does not exist.")
-		col.data_pop(y)
+		col.data_delete(y)
 		col.data_insert(data, y)
 
 	def set_column(self, col_to_mod, data, reset_sortstate = True):
@@ -909,7 +943,7 @@ class MultiframeList(ttk.Frame):
 
 	def get_rows(self, start, end = None):
 		"""
-		Retrieve rows between a start and an optional end parameter.
+		Retrieves rows between a start and an optional end parameter.
 
 		If end is omitted, only the row indexed at start will be included.
 		If end is set to END, all data from start to the end of the
@@ -1020,7 +1054,7 @@ class MultiframeList(ttk.Frame):
 			frame[1].unbind(f"<Button-{old}>")
 			frame[1].bind(f"<Button-{self.cnf.rightclickbtn}>", _right_click_handler)
 
-	def _cnf_selection(self, _):
+	def _cnf_selection_type(self, _):
 		"""
 		Callback for when the selection type is changed via the config
 		method.
@@ -1081,7 +1115,7 @@ class MultiframeList(ttk.Frame):
 
 	def _get_clamped_resize_pos(self, dragged_frame, event):
 		"""
-		Return the position a resize operation started on the label of frame
+		Returns the position a resize operation started on the label of frame
 		`dragged_frame` should be at, relative to the MultiframeList's position.
 		"""
 		cmin, cmax = self._get_clamps(dragged_frame)
@@ -1112,7 +1146,7 @@ class MultiframeList(ttk.Frame):
 
 	def _get_frame_at_x(self, x):
 		"""
-		Return frame index of the frame at screen pixel position x,
+		Returns frame index of the frame at screen pixel position x,
 		clamping to 0 and (len(self.frames) - 1).
 		"""
 		highlight_idx = -1
@@ -1124,7 +1158,7 @@ class MultiframeList(ttk.Frame):
 
 	def _get_listbox_conf(self, listbox):
 		"""
-		Create a dict of style options based on the ttk Style settings in
+		Creates a dict of style options based on the ttk Style settings in
 		`style_identifier` that listboxes can be directly configured with.
 
 		The listbox passed to the method will be queried for its config and
@@ -1207,6 +1241,7 @@ class MultiframeList(ttk.Frame):
 			self._selection_set_item(self.active_cell_y, toggle = True)
 		else:
 			self._selection_set(self.active_cell_y)
+		self.event_generate("<<MultiframeSelect>>", when = "tail")
 
 	def _on_column_release(self, event, released_frame, drag_intent):
 		if drag_intent is DRAGINTENT.REORDER and self.cnf.reorderable:
@@ -1257,6 +1292,14 @@ class MultiframeList(ttk.Frame):
 				width = 3, height = self.frames[0][1].winfo_height()
 			)
 			self.resize_highlight.tkraise()
+
+	def _on_escape(self, evt):
+		"""
+		Called when the escape key is pressed, clears the selection and
+		generates a <<MultiframeSelect>> event.
+		"""
+		self._selection_clear()
+		self.event_generate("<<MultiframeSelect>>", when = "tail")
 
 	def _on_frame_header_leave(self, evt):
 		evt.widget.configure(cursor = "arrow")
@@ -1317,6 +1360,7 @@ class MultiframeList(ttk.Frame):
 			self._selection_set_from_anchor(hovered)
 		for i in self.frames:
 			i[1].see(hovered)
+		self.event_generate("<<MultiframeSelect>>", when = "tail")
 
 	def _on_listbox_mouse_press(self, event, button, frameindex):
 		"""
@@ -1334,23 +1378,27 @@ class MultiframeList(ttk.Frame):
 		tosel = min(tosel, self.length - 1)
 		self._set_active_cell(frameindex, tosel)
 		if (
-			self.cnf.selection_type is not SELECTION_TYPE.MULTIPLE or
-			not (with_shift(event) or with_ctrl(event))
+			tosel not in self.selection and (
+				self.cnf.selection_type is not SELECTION_TYPE.MULTIPLE or
+				not (with_shift(event) or with_ctrl(event))
+			)
 		):
 			# reset immediatedly when the new selection drag is replacing
 			self._selection_set(tosel)
+			self.event_generate("<<MultiframeSelect>>", when = "tail")
 		self._is_simple_click = True
 		self._last_click_event = event
 
 	def _on_listbox_mouse_release(self, event, button, frameindex):
 		"""
 		Called by listboxes when the mouse is released over them.
-		Will set the selection only if the click was a simple click,
-		if it was a dragging selection this will have been done by
-		`_on_listbox_mouse_hover`.
-		Generates <<MultiframeSelect>> and <<MultiframeRightclick>> events.
+		If the released button was the rightclick one, generates a
+		<<MultiframeRightclick>> event.
+		Resets click variables.
 		"""
 		# Safeguard for i. e: Click1, Click3, Release3, Release1
+		# NOTE: these should be handled differently as well / behave very
+		# specifically in the windows listboxes but tbh who cares
 		if self._last_click_event is None:
 			return
 		if self._is_simple_click:
@@ -1358,7 +1406,7 @@ class MultiframeList(ttk.Frame):
 				self._selection_set_from_anchor(self.active_cell_y)
 			elif with_ctrl(event):
 				self._selection_set_item(self.active_cell_y, toggle = True)
-			else:
+			elif button != self.cnf.rightclickbtn or self.active_cell_y not in self.selection:
 				self._selection_set(self.active_cell_y)
 
 		self.coordx = self.frames[frameindex][0].winfo_rootx() + event.x
@@ -1366,7 +1414,6 @@ class MultiframeList(ttk.Frame):
 		self._is_simple_click = True
 		self._last_dragged_over_element = None
 		self._last_click_event = None
-		self.event_generate("<<MultiframeSelect>>", when = "tail")
 		if button == self.cnf.rightclickbtn:
 			self.event_generate("<<MultiframeRightclick>>", when = "tail")
 
@@ -1422,20 +1469,11 @@ class MultiframeList(ttk.Frame):
 		"""
 		for i in self.frames:
 			i[1].selection_clear(0, tk.END)
-		# if self.cnf.selection_type is SELECTION_TYPE.SINGLE:
-		# 	print(f"redrawing selection: {self.selection}")
-		# elif self.cnf.selection_type is SELECTION_TYPE.MULTIPLE:
-		# 	print(f"redrawing selection: [{''.join(' x'[v] for v in self.selection)}]")
 		if self.selection is None:
 			return
-		if self.cnf.selection_type is SELECTION_TYPE.SINGLE:
+		for idx in self.selection:
 			for i in self.frames:
-				i[1].selection_set(self.selection)
-		elif self.cnf.selection_type is SELECTION_TYPE.MULTIPLE:
-			for idx, v in enumerate(self.selection):
-				if v:
-					for i in self.frames:
-						i[1].selection_set(idx)
+				i[1].selection_set(idx)
 
 	def _reset_sortstate(self):
 		"""
@@ -1507,44 +1545,27 @@ class MultiframeList(ttk.Frame):
 		Clears the selection.
 		"""
 		self._selection_anchor = None
-		self.selection_size = 0
-		if self.cnf.selection_type is SELECTION_TYPE.SINGLE:
-			self.selection = None
-		elif self.cnf.selection_type is SELECTION_TYPE.MULTIPLE:
-			self.selection = [False] * self.length
+		self.selection.clear()
 		if redraw:
 			self._redraw_selection()
 
-	def _selection_set(self, what, anchor = None, toggle = False):
+	def _selection_set(self, new, anchor = None, toggle = False):
 		"""
-		Clears and then sets the selection to the given index or list of bools.
-		The `anchor` argument is only relevant for when a list is given:
-		If it is `None`, the selection anchor will be set to the first `True`
-		value found in the list, or remain `None` if the list contains no `True`.
+		Clears and then sets the selection to the given iterable or single index.
 		If `anchor` is not `None`, the selection anchor will be set to `anchor`.
-		If supplied with a list in SINGLE selection type, raises a ValueError.
+		Otherwise, anchor will be set to the first value seen in the new selection set,
+		whose order can possibly not be guaranteed.
+		`toggle` will be passed on to all calls to `self._selection_set_item`.
 		"""
-		if isinstance(what, list):
-			if self.cnf.selection_type is not SELECTION_TYPE.MULTIPLE:
-				raise ValueError(
-					"Can't set selection to a list when selection type is not MULTIPLE."
-				)
-			if len(what) != self.length:
-				raise ValueError(
-					"Multiple selection list must be of same length as the MultiframeList."
-				)
-			self._selection_clear(False)
-			if anchor is not None:
-				self._selection_anchor = anchor
-			for idx, v in enumerate(what):
-				if v:
-					self._selection_set_item(idx, False, toggle)
-			self._redraw_selection()
-		elif isinstance(what, int):
-			self._selection_clear(False)
-			self._selection_set_item(what, toggle = toggle)
+		self._selection_clear(False)
+		if anchor is not None:
+			self._selection_anchor = anchor
+		if isinstance(new, int):
+			self._selection_set_item(new, False, toggle)
 		else:
-			raise TypeError("Invalid type for selection!")
+			for idx in new:
+				self._selection_set_item(idx, False, toggle)
+		self._redraw_selection()
 
 	def _selection_set_from_anchor(self, target, toggle = False, clear = True):
 		"""
@@ -1552,41 +1573,34 @@ class MultiframeList(ttk.Frame):
 		anchor to the given target index. If the anchor does not exist, will set
 		the selection as just the target item and make it the new anchor.
 		If the selection mode is `SINGLE`, will simply set the selection to `target`.
-		If `toggle` is `True`, will toggle every element in the selection bound instead
-		of setting it.
+		`toggle` will be passed on to `self._selection_set`.
+		Only relevant for `MULTIPLE` selection mode, if `clear` is set to `False`,
+		the current selection will be kept and the new selection added as a union to it.
 		"""
 		if self.cnf.selection_type is SELECTION_TYPE.SINGLE or self._selection_anchor is None:
 			self._selection_set(target, toggle = toggle)
 			return
 		step = -1 if target < self._selection_anchor else 1
-		new_sel = [False] * self.length if clear else self.selection
-		for i in range(self._selection_anchor, target + step, step):
-			new_sel[i] = True
+		new_sel = set() if clear else self.selection.copy()
+		new_sel.update(range(self._selection_anchor, target + step, step))
 		self._selection_set(new_sel, self._selection_anchor, toggle)
 
 	def _selection_set_item(self, idx, redraw = True, toggle = False):
 		"""
-		Adds a new item to the MultiframeList's selection, be it in single
+		Adds a new index to the MultiframeList's selection, be it in single
 		or multiple selection mode. If the selection anchor is None, it
 		will be set to the given item.
-		If `toggle` is `True`, will toggle the item instead of setting it.
+		If `redraw` is `True`, will redraw the selection.
+		If `toggle` is `True`, will toggle the index instead of setting it.
 		"""
 		if self._selection_anchor is None:
 			self._selection_anchor = idx
 		if self.cnf.selection_type is SELECTION_TYPE.SINGLE:
-			if toggle and self.selection == idx:
-				self.selection_size = 0
-				self.selection = None
-			else:
-				self.selection_size = 1
-				self.selection = idx
-		elif self.cnf.selection_type is SELECTION_TYPE.MULTIPLE:
-			if toggle:
-				self.selection_size += (-1 if self.selection[idx] else 1)
-				self.selection[idx] = not self.selection[idx]
-			elif not self.selection[idx]:
-				self.selection_size += 1
-				self.selection[idx] = True
+			self.selection.clear()
+		if toggle and idx in self.selection:
+			self.selection.remove(idx)
+		else:
+			self.selection.add(idx)
 		if redraw:
 			self._redraw_selection()
 
@@ -1626,10 +1640,11 @@ class MultiframeList(ttk.Frame):
 		self.length = new_length
 
 		if self.active_cell_y is not None:
-			if self.active_cell_y > self.length - 1 and self.length > 0:
-				self._set_active_cell(self.active_cell_x, self.length - 1)
-			elif self.length == 0:
-				self._set_active_cell(self.active_cell_x, None)
+			new_ay = self.active_cell_y
+			if new_ay > self.length - 1:
+				new_ay = self.length - 1 if self.length > 0 else None
+			if new_ay != self.active_cell_y:
+				self._set_active_cell(self.active_cell_x, new_ay)
 		self._selection_clear()
 
 		for fi in self._get_empty_frames():
