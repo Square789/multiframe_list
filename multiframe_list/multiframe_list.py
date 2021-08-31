@@ -296,10 +296,12 @@ class _Column():
 	def data_delete(self, from_, to = None):
 		"""
 		Removes the elements from `from_` to `to` (end-exclusive), or
-		just `from_` if `to` is not given. Refreshes interface if
-		assigned a frame.
+		just `from_` if `to` is not given. No effect if `to` <= `from_`.
+		Refreshes interface if assigned a frame.
 		"""
 		to = from_ + 1 if to is None else to
+		if to <= from_:
+			return
 		self.data = self.data[:from_] + self.data[to:]
 		if self.assignedframe is not None:
 			self.mfl.frames[self.assignedframe][1].delete(from_, to - 1)
@@ -744,13 +746,6 @@ class MultiframeList(ttk.Frame):
 		self._redraw_active_cell()
 		self._redraw_selection()
 
-	def get_columns(self):
-		"""
-		Returns a dict where key is a column id and value is the column's
-		current display slot (frame). Value is None if the column is hidden.
-		"""
-		return {c.col_id: c.assignedframe for c in self.columns.values()}
-
 	def get_active_cell(self):
 		"""
 		Returns the coordinates of the currently selected active cell as a
@@ -758,6 +753,13 @@ class MultiframeList(ttk.Frame):
 		The two values may also be None.
 		"""
 		return (self.active_cell_x, self.active_cell_y)
+
+	def get_columns(self):
+		"""
+		Returns a dict where key is a column id and value is the column's
+		current display slot (frame). Value is None if the column is hidden.
+		"""
+		return {c.col_id: c.assignedframe for c in self.columns.values()}
 
 	def get_last_click(self):
 		"""
@@ -770,6 +772,20 @@ class MultiframeList(ttk.Frame):
 	def get_length(self):
 		"""Returns length of the MultiframeList."""
 		return self.length
+
+	def get_selection(self):
+		"""
+		Returns the selection of the MultiframeList.
+		If in SINGLE selection mode, returns only the selected index
+		or `None`, otherwise passes through the selection set.
+		This mainly serves as convenience for the SINGLE selection
+		type, it is preferrable to check for selection emptiness
+		with simply `if mfl.selection:`
+		"""
+		if self.cnf.selection_type is SELECTION_TYPE.SINGLE:
+			return next(iter(self.selection)) if self.selection else None
+		else:
+			return self.selection
 
 	def remove_column(self, col_id):
 		"""
@@ -819,7 +835,18 @@ class MultiframeList(ttk.Frame):
 				i[1].see(self.active_cell_y)
 		self._redraw_selection()
 
-	#==DATA MODIFICATION, ALL==
+	def set_selection(self, new_selection):
+		"""
+		Sets the listbox' selection to be made out of only these
+		contained within the given iterable or index.
+		If the selection type does not allow the selection to be made
+		up of multiple indices when multiple are passed in, the last
+		item in the iterable will be the selection.
+		"""
+		self._selection_set(new_selection)
+		self.event_generate("<<MultiframeSelect>>", when = "tail")
+
+	#==DATA MODIFICATION==
 
 	def insert_row(self, data, insindex = None, reset_sortstate = True):
 		"""
@@ -859,7 +886,7 @@ class MultiframeList(ttk.Frame):
 				raise IndexError(f"`from` index {what} out of range.")
 			if to < 0 or to > self.length:
 				raise IndexError(f"`to` index {what} out of range.")
-			to_delete = [range(to - 1, what - 1, -1)]
+			to_delete = [range(what, to)]
 		else:
 			# Must be reversed to delete entries starting from the back,
 			# otherwise deletion of selection blocks will affect others
@@ -939,7 +966,7 @@ class MultiframeList(ttk.Frame):
 					)
 			targetcol.data_set(data)
 
-	#==DATA RETRIEVAL, DICT, ALL==
+	#==DATA RETRIEVAL==
 
 	def get_rows(self, start, end = None):
 		"""
@@ -1296,10 +1323,12 @@ class MultiframeList(ttk.Frame):
 	def _on_escape(self, evt):
 		"""
 		Called when the escape key is pressed, clears the selection and
-		generates a <<MultiframeSelect>> event.
+		generates a <<MultiframeSelect>> event if the selection changed.
 		"""
+		was_not_empty = bool(self.selection)
 		self._selection_clear()
-		self.event_generate("<<MultiframeSelect>>", when = "tail")
+		if was_not_empty:
+			self.event_generate("<<MultiframeSelect>>", when = "tail")
 
 	def _on_frame_header_leave(self, evt):
 		evt.widget.configure(cursor = "arrow")
@@ -1587,15 +1616,16 @@ class MultiframeList(ttk.Frame):
 	def _selection_set_item(self, idx, redraw = True, toggle = False):
 		"""
 		Adds a new index to the MultiframeList's selection, be it in single
-		or multiple selection mode. If the selection anchor is None, it
+		or multiple selection mode. If the selection mode is SINGLE, the
+		selection will be cleared. If the selection anchor is None, it
 		will be set to the given item.
 		If `redraw` is `True`, will redraw the selection.
 		If `toggle` is `True`, will toggle the index instead of setting it.
 		"""
+		if self.cnf.selection_type is SELECTION_TYPE.SINGLE:
+			self._selection_clear(False)
 		if self._selection_anchor is None:
 			self._selection_anchor = idx
-		if self.cnf.selection_type is SELECTION_TYPE.SINGLE:
-			self.selection.clear()
 		if toggle and idx in self.selection:
 			self.selection.remove(idx)
 		else:

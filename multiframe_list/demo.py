@@ -79,7 +79,7 @@ class Demo:
 			)),
 			tk.Button(self.root, text="lbstyle",  command=self.randstyle),
 			tk.Button(self.root, text="conf",     command=self.randcfg),
-			tk.Button(self.root, text="randac",  command=self.randactive),
+			tk.Button(self.root, text="randac",   command=self.randactive),
 		)
 
 		for btn in btns:
