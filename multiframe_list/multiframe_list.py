@@ -1224,8 +1224,8 @@ class MultiframeList(ttk.Frame):
 		Executed when the MultiframeList receives <Left> and <Right> events,
 		triggered by the user pressing the arrow keys.
 		"""
+		new_x = 0 if self.active_cell_x is None and self.frames else self.active_cell_x + direction
 		new_y = 0 if self.active_cell_y is None and self.length > 0 else self.active_cell_y
-		new_x = 0 if self.active_cell_x is None else self.active_cell_x + direction
 		if new_x < 0 or new_x > len(self.frames) - 1:
 			return
 		self._set_active_cell(new_x, new_y)
@@ -1261,6 +1261,12 @@ class MultiframeList(ttk.Frame):
 		Generates a <<MultiframeSelect>> event and modifies the
 		selection depending on whether shift and ctrl were being held.
 		"""
+		new_x = 0 if self.active_cell_x is None and self.frames else self.active_cell_x
+		new_y = 0 if self.active_cell_y is None and self.length > 0 else self.active_cell_y
+		if new_y is None or new_x is None:
+			return
+
+		self._set_active_cell(new_x, new_y)
 		if with_shift(event):
 			self._selection_set_from_anchor(self.active_cell_y, clear = not with_ctrl(event))
 		elif with_ctrl(event):
