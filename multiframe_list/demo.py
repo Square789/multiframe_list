@@ -24,10 +24,6 @@ def getlongest(seq):
 class Demo:
 	def __init__(self):
 		self.root = tk.Tk()
-		self.root.bind(
-			"<<MultiframeRightclick>>",
-			lambda e: print("Rightclick on", e.widget, "@", self.mfl.get_last_click())
-		)
 		self.mfl = MultiframeList(self.root, inicolumns = (
 				{"name": "Small", "minsize": 40},
 				{"name": "Sortercol", "col_id": "sorter"},
@@ -42,6 +38,10 @@ class Demo:
 			),
 			active_cell_span_row = False,
 			reorderable = True,
+		)
+		self.mfl.bind(
+			"<<MultiframeRightclick>>",
+			lambda e: print("Rightclick on", e.widget, "@", self.mfl.get_last_click())
 		)
 		self.mfl.config_column("sickocol", formatter = priceconv)
 		self.mfl.config_column("sorter", sort = True)

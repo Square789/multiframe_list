@@ -519,7 +519,7 @@ class MultiframeList(ttk.Frame):
 		if ctxtmen_btn is not None:
 			self.bind(f"<KeyPress-{ctxtmen_btn}>", self._on_menu_button)
 		self.bind(f"<KeyPress-{self.cnf.click_key}>", self._on_click_key)
-		self.bind(f"<Escape>", self._on_escape)
+		self.bind(f"<Escape>", lambda _: self._selection_clear(with_event = True))
 
 		self.ttk_style = ttk.Style()
 		self.bind("<<ThemeChanged>>", self._theme_update)
@@ -1335,16 +1335,6 @@ class MultiframeList(ttk.Frame):
 			)
 			self.resize_highlight.tkraise()
 
-	def _on_escape(self, evt):
-		"""
-		Called when the escape key is pressed, clears the selection and
-		generates a <<MultiframeSelect>> event if the selection changed.
-		"""
-		was_not_empty = bool(self.selection)
-		self._selection_clear()
-		if was_not_empty:
-			self.event_generate("<<MultiframeSelect>>", when = "tail")
-
 	def _on_frame_header_leave(self, evt):
 		evt.widget.configure(cursor = "arrow")
 
@@ -1583,15 +1573,20 @@ class MultiframeList(ttk.Frame):
 			i[1].yview_moveto(a)
 		self.scrollbar.set(a, b)
 
-	def _selection_clear(self, redraw = True):
+	def _selection_clear(self, redraw = True, with_event = False):
 		"""
 		Clears the selection anchor and the selection.
 		If `redraw` is `True`, will also redraw the selection.
+		If `with_event` is `True`, a <<MultiframeSelect>> event will
+		be generated if the selection was not empty beforehand.
 		"""
+		was_not_empty = bool(self.selection)
 		self._selection_anchor = None
 		self.selection.clear()
 		if redraw:
 			self._redraw_selection()
+		if with_event and was_not_empty:
+			self.event_generate("<<MultiframeSelect>>", when = "tail")
 
 	def _selection_set(self, new, anchor = None, toggle = False):
 		"""
@@ -1696,7 +1691,7 @@ class MultiframeList(ttk.Frame):
 				new_ay = self.length - 1 if self.length > 0 else None
 			if new_ay != self.active_cell_y:
 				self._set_active_cell(self.active_cell_x, new_ay)
-		self._selection_clear()
+		self._selection_clear(with_event = True)
 
 		for fi in self._get_empty_frames():
 			curframelen = self.frames[fi][1].size()
