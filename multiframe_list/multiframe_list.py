@@ -545,8 +545,7 @@ class MultiframeList(ttk.Frame):
 		# release of the mouse button.
 		self._is_simple_click = True
 
-		self._active_cell_style = self.ttk_style.configure("MultiframeList.ActiveCell")
-		self._active_row_style = self.ttk_style.configure("MultiframeList.ActiveRow")
+		self._active_cell_style, self._active_row_style = self._load_active_cell_style()
 
 		# Frame index of the last pressed frame header
 		self.pressed_frame = None
@@ -1216,6 +1215,19 @@ class MultiframeList(ttk.Frame):
 		e_height = self._get_listbox_entry_height(lb)
 		return ((y_pos - borderwidth) // e_height) + offset
 
+	def _load_active_cell_style(self):
+		"""
+		Returns a 2-value tuple of the active cell style and the active
+		row style, with default values if none are given in the style
+		database.
+		"""
+		ac = self._DEFAULT_ITEMCONFIGURE.copy()
+		ac.update(self.ttk_style.configure("MultiframeList.ActiveCell") or {})
+		ar = self._DEFAULT_ITEMCONFIGURE.copy()
+		ar.update(self.ttk_style.configure("MultiframeList.ActiveRow") or {})
+
+		return ac, ar
+
 	def _on_arrow_x(self, event, direction):
 		"""
 		Executed when the MultiframeList receives <Left> and <Right> events,
@@ -1439,6 +1451,7 @@ class MultiframeList(ttk.Frame):
 				self._selection_set_item(self.active_cell_y, toggle = True)
 			elif button != self.cnf.rightclickbtn or self.active_cell_y not in self.selection:
 				self._selection_set(self.active_cell_y)
+			self.event_generate("<<MultiframeSelect>>", when = "tail")
 
 		self.coordx = self.frames[frameindex][0].winfo_rootx() + event.x
 		self.coordy = self.frames[frameindex][0].winfo_rooty() + 20 + event.y
@@ -1700,8 +1713,7 @@ class MultiframeList(ttk.Frame):
 		Changes Listbox look, as those are not available as ttk variants,
 		and updates the active cell style.
 		"""
-		self._active_cell_style = self.ttk_style.configure("MultiframeList.ActiveCell")
-		self._active_row_style = self.ttk_style.configure("MultiframeList.ActiveRow")
+		self._active_cell_style, self._active_row_style = self._load_active_cell_style()
 
 		if not self.frames:
 			return
