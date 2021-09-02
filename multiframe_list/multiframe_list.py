@@ -863,10 +863,7 @@ class MultiframeList(ttk.Frame):
 		if reset_sortstate:
 			self._reset_sortstate()
 		for col in self.columns.values():
-			if col.col_id in data:
-				col.data_insert(data.pop(col.col_id), insindex)
-			else:
-				col.data_insert(BLANK, insindex)
+			col.data_insert(data.get(col.col_id, BLANK), insindex)
 		self._set_length(self.length + 1)
 
 	def remove_rows(self, what, to = None):
@@ -923,7 +920,7 @@ class MultiframeList(ttk.Frame):
 			self._reset_sortstate()
 		for col in self.columns.values():
 			if col.col_id in data:
-				col.data_set(data.pop(col.col_id))
+				col.data_set(data[col.col_id])
 			else:
 				col.data_set([BLANK for _ in range(ln)])
 		self._set_length(ln)
