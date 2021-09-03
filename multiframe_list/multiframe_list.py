@@ -410,8 +410,8 @@ class MultiframeList(ttk.Frame):
 
 	The list broadcasts the Virtual event "<<MultiframeSelect>>" after the selection
 		is modified in any way.
-	The list broadcasts the Virtual event "<<MultiframeRightclick>>" whenever a right
-		click is performed or the context menu button is pressed.
+	The list broadcasts the Virtual event "<<MultiframeRightclick>>" whenever the right
+		click mouse button is released or the context menu button is pressed.
 	The list will reset the active selection when Escape is pressed.
 	"""
 
@@ -541,9 +541,6 @@ class MultiframeList(ttk.Frame):
 		# The last ButtonPress event for a click on a listbox.
 		# If None, no selection is being made.
 		self._last_click_event = None
-		# Whether the cursor has left the initially clicked element between press and
-		# release of the mouse button.
-		self._is_simple_click = True
 
 		self._active_cell_style, self._active_row_style = self._load_active_cell_style()
 
@@ -1383,7 +1380,6 @@ class MultiframeList(ttk.Frame):
 		hovered = min(hovered, self.length - 1)
 		if self._last_dragged_over_element == hovered:
 			return
-		self._is_simple_click = False
 		self._last_dragged_over_element = hovered
 		self._set_active_cell(frameindex, hovered)
 		if with_ctrl(event):
@@ -1411,16 +1407,18 @@ class MultiframeList(ttk.Frame):
 			return
 		tosel = min(tosel, self.length - 1)
 		self._set_active_cell(frameindex, tosel)
-		if (
-			tosel not in self.selection and (
-				self.cnf.selection_type is not SELECTION_TYPE.MULTIPLE or
-				not (with_shift(event) or with_ctrl(event))
-			)
-		):
-			# reset immediatedly when the new selection drag is replacing
+		# NOTE: these should be handled differently / behave very
+		# specifically in the windows listboxes but tbh who cares
+		if with_shift(event):
+			self._selection_set_from_anchor(tosel)
+		elif with_ctrl(event):
+			self._selection_set_item(tosel, toggle = True)
+		else:
 			self._selection_set(tosel)
-			self.event_generate("<<MultiframeSelect>>", when = "tail")
-		self._is_simple_click = True
+
+		self.event_generate("<<MultiframeSelect>>", when = "tail")
+
+		self._last_dragged_over_element = tosel
 		self._last_click_event = event
 
 	def _on_listbox_mouse_release(self, event, button, frameindex):
@@ -1430,22 +1428,11 @@ class MultiframeList(ttk.Frame):
 		<<MultiframeRightclick>> event.
 		Resets click variables.
 		"""
-		# NOTE: these should be handled differently / behave very
-		# specifically in the windows listboxes but tbh who cares
 		if self._last_click_event is None:
 			return
-		if self._is_simple_click:
-			if with_shift(event):
-				self._selection_set_from_anchor(self.active_cell_y)
-			elif with_ctrl(event):
-				self._selection_set_item(self.active_cell_y, toggle = True)
-			elif button != self.cnf.rightclickbtn or self.active_cell_y not in self.selection:
-				self._selection_set(self.active_cell_y)
-			self.event_generate("<<MultiframeSelect>>", when = "tail")
 
 		self.coordx = self.frames[frameindex][0].winfo_rootx() + event.x
 		self.coordy = self.frames[frameindex][0].winfo_rooty() + 20 + event.y
-		self._is_simple_click = True
 		self._last_dragged_over_element = None
 		self._last_click_event = None
 		if button == self.cnf.rightclickbtn:
@@ -1683,7 +1670,6 @@ class MultiframeList(ttk.Frame):
 		# Will cause errors otherwise if change occurs while user is dragging
 		self._last_click_event = None
 		self._last_dragged_over_element = None
-		self._is_simple_click = True
 
 		if self.active_cell_y is not None:
 			new_ay = self.active_cell_y
