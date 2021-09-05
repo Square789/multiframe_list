@@ -834,13 +834,20 @@ class MultiframeList(ttk.Frame):
 	def set_selection(self, new_selection):
 		"""
 		Sets the listbox' selection to be made out of only these
-		contained within the given iterable or index.
+		contained within the given iterable or index and generates
+		a <<MultiframeSelect>> event.
 		If the selection type does not allow the selection to be made
 		up of multiple indices when multiple are passed in, the last
 		item in the iterable will be the selection.
+		Will set the view to look at the last index.
 		"""
+		# Wasteful iteration just to look at the last idx but whatever
+		new_selection = tuple(new_selection)
 		self._selection_set(new_selection)
 		self.event_generate("<<MultiframeSelect>>", when = "tail")
+		if new_selection:
+			for i in self.frames:
+				i[1].see(new_selection[-1])
 
 	#==DATA MODIFICATION==
 
@@ -1407,16 +1414,17 @@ class MultiframeList(ttk.Frame):
 			return
 		tosel = min(tosel, self.length - 1)
 		self._set_active_cell(frameindex, tosel)
-		# NOTE: these should be handled differently / behave very
-		# specifically in the windows listboxes but tbh who cares
-		if with_shift(event):
-			self._selection_set_from_anchor(tosel)
-		elif with_ctrl(event):
-			self._selection_set_item(tosel, toggle = True)
-		else:
-			self._selection_set(tosel)
+		if button != self.cnf.rightclickbtn or tosel not in self.selection:
+			# NOTE: these should be handled differently / behave very
+			# specifically in the windows listboxes but tbh who cares
+			if with_shift(event):
+				self._selection_set_from_anchor(tosel)
+			elif with_ctrl(event):
+				self._selection_set_item(tosel, toggle = True)
+			else:
+				self._selection_set(tosel)
 
-		self.event_generate("<<MultiframeSelect>>", when = "tail")
+			self.event_generate("<<MultiframeSelect>>", when = "tail")
 
 		self._last_dragged_over_element = tosel
 		self._last_click_event = event
@@ -1448,7 +1456,7 @@ class MultiframeList(ttk.Frame):
 			return
 		if self.active_cell_y is None:
 			return
-		local_actcellx = 0 if self.active_cellx is None else self.active_cell_x
+		local_actcellx = 0 if self.active_cell_x is None else self.active_cell_x
 		pseudo_lbl = self.frames[local_actcellx][0]
 		pseudo_lbx = self.frames[local_actcellx][1]
 		first_offset = pseudo_lbx.yview()[0]
