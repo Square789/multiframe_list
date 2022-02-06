@@ -1,13 +1,14 @@
 # multiframe_list.py
 Compact raw python module that brings the MultiframeList class with it.
 It is a tkinter widget that can be used to display data split up over multiple columns.
-It integrates into the ttk styling database and applies certain style configurations to
-otherwise unstylable Listboxes.
+Able to read into the ttk styling database and apply certain style configurations to
+otherwise unstylable Listboxes and exists exclusively because I didn't know about
+`ttk.Treeview` and was too stubborn to drop existing code.
 
 ## Installation
-Get it by running `pip install multiframe_list`
+Get it by running `pip install multiframe_list`.
 
-## Example script:
+## Example:
 
 ```python
 import tkinter as tk
@@ -29,17 +30,18 @@ root = tk.Tk()
 item_display = MultiframeList(root, inicolumns = (
     {"name": "Items", "col_id": "col_items", "sort": False},
     {"name": "Price", "col_id": "col_prices", "sort": True,
-	 "formatter": format_price},
+     "formatter": format_price},
     {"name": "Stock", "col_id": "col_qty", "sort": False},
 ))
-
-item_display.setdata({
+item_display.set_data({
     "col_items":  [t[0] for t in items],
     "col_prices": [t[1] for t in items],
     "col_qty":    [t[2] for t in items],
 })
+# Required for the price formatter.
+# If not called, the column would display raw values.
 item_display.format()
-# Required for the price formatter or that column would display raw values
+# item_display.format(("col_prices",)) # would have the same effect.
 
 item_display.grid(sticky = "nesw")
 root.mainloop()
