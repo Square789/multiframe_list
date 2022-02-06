@@ -3,7 +3,6 @@
 import ast
 
 from setuptools import setup
-from distutils.util import convert_path
 
 # Thanks: https://stackoverflow.com/questions/2058802/
 # 	how-can-i-get-the-version-defined-in-setup-py-setuptools-in-my-package
