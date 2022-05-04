@@ -10,7 +10,7 @@ import os
 import tkinter as tk
 import tkinter.ttk as ttk
 
-__version__ = "4.0.0"
+__version__ = "4.0.1"
 __author__ = "Square789"
 
 NoneType = type(None)
@@ -656,7 +656,7 @@ class MultiframeList(ttk.Frame):
 			new_frame[0].grid_propagate(False)
 			# For some reason necessary so the grid manager reacts to the new frame,
 			# in conjunction with the <Configure> event below
-			self.framecontainer.update()
+			self.framecontainer.update_idletasks()
 
 			self._listboxheight_hack.configure(height = new_frame[1].winfo_reqheight())
 
@@ -1003,7 +1003,7 @@ class MultiframeList(ttk.Frame):
 		return r_data, col_id_map
 
 	def get_column(self, col_id):
-		"""Returns the data of the colum with col_id as a list."""
+		"""Returns the data of the column with col_id as a list."""
 		col = self._get_col_by_id(col_id)
 		return col.data
 

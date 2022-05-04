@@ -95,6 +95,8 @@ class Demo:
 				print("Please return that column to frame 6, it's where it feels at home.")
 				return
 			self.mfl.remove_column("newcol")
+		elif 6 in self.mfl.get_columns().values():
+			print("Something's in frame 6 already, get it cleared first!")
 		else:
 			self.mfl.add_columns(
 				{"col_id": "newcol", "name": "added @ runtime; wide.",
